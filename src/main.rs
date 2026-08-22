@@ -103,10 +103,11 @@ impl TrainerApp {
     }
 
     fn asr_status(&self) -> AsrStatus {
-        self.recognizer
-            .lock()
-            .map(|r| r.status())
-            .unwrap_or_else(|_| AsrStatus::Error("Распознаватель занят".into()))
+        match self.recognizer.try_lock() {
+            Ok(r) => r.status(),
+            // Пока идёт запись, мьютекс занят — не блокируем UI.
+            Err(_) => AsrStatus::Ready,
+        }
     }
 
     fn persist_progress(&mut self) {
@@ -143,9 +144,14 @@ impl TrainerApp {
     }
 
     fn submit(&mut self, answer: UserAnswer) {
+        // Отменяем отложенный ASR, чтобы не зачесть ответ дважды.
+        self.listen_rx = None;
+        self.listen_target = None;
+
         let Some(session) = self.session.as_mut() else {
             return;
         };
+        session.listening = false;
         let Some(ex) = session.exercises.get(session.index) else {
             return;
         };
@@ -163,6 +169,8 @@ impl TrainerApp {
     }
 
     fn advance_after_feedback(&mut self) {
+        self.listen_rx = None;
+        self.listen_target = None;
         let Some(session) = self.session.as_mut() else {
             return;
         };
@@ -226,8 +234,14 @@ impl TrainerApp {
             Ok(outcome) => {
                 self.listen_rx = None;
                 let target = self.listen_target.take().unwrap_or_default();
+                // Уже ушли с упражнения / ответили вручную — поздний ASR игнорируем.
+                let still_on_exercise = matches!(self.screen, Screen::Exercise)
+                    && self.session.as_ref().is_some_and(|s| s.listening);
                 if let Some(session) = self.session.as_mut() {
                     session.listening = false;
+                }
+                if !still_on_exercise {
+                    return;
                 }
                 match outcome {
                     Ok(heard) => {
@@ -496,12 +510,13 @@ impl TrainerApp {
                 .unwrap_or(false);
 
             if asr_ready {
-                let label = if listening {
-                    "Слушаю…"
-                } else {
-                    "Сказать"
-                };
-                if !listening && big_button(ui, label, Color32::from_rgb(140, 60, 100)).clicked() {
+                if listening {
+                    ui.label(
+                        RichText::new("Слушаю…")
+                            .font(FontId::proportional(24.0))
+                            .color(Color32::from_rgb(140, 60, 100)),
+                    );
+                } else if big_button(ui, "Сказать", Color32::from_rgb(140, 60, 100)).clicked() {
                     self.try_listen();
                 }
                 ui.add_space(12.0);
@@ -518,21 +533,29 @@ impl TrainerApp {
                     .color(Color32::DARK_GRAY),
             );
             ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if big_button(ui, "Получилось", Color32::from_rgb(40, 130, 90)).clicked() {
-                    self.submit(UserAnswer::ReadDone {
-                        matched: true,
-                        heard: None,
-                    });
-                }
-                ui.add_space(12.0);
-                if big_button(ui, "Не получилось", Color32::from_rgb(150, 70, 60)).clicked() {
-                    self.submit(UserAnswer::ReadDone {
-                        matched: false,
-                        heard: None,
-                    });
-                }
-            });
+            if listening {
+                ui.label(
+                    RichText::new("Подождите окончания записи…")
+                        .font(FontId::proportional(18.0))
+                        .color(Color32::DARK_GRAY),
+                );
+            } else {
+                ui.horizontal(|ui| {
+                    if big_button(ui, "Получилось", Color32::from_rgb(40, 130, 90)).clicked() {
+                        self.submit(UserAnswer::ReadDone {
+                            matched: true,
+                            heard: None,
+                        });
+                    }
+                    ui.add_space(12.0);
+                    if big_button(ui, "Не получилось", Color32::from_rgb(150, 70, 60)).clicked() {
+                        self.submit(UserAnswer::ReadDone {
+                            matched: false,
+                            heard: None,
+                        });
+                    }
+                });
+            }
         });
     }
 
