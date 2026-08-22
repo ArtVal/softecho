@@ -101,9 +101,25 @@ pub fn check_answer(exercise: &Exercise, answer: &UserAnswer) -> CheckResult {
     }
 }
 
-/// Сравнение распознанной речи с образцом (допускаем полное совпадение после нормализации).
+/// Сравнение распознанной речи с образцом.
+/// Допускаем: совпадение целиком, цель как подстрока, хвост `[unk]` от Vosk.
 pub fn speech_matches(target: &str, heard: &str) -> bool {
-    normalize_phrase(target) == normalize_phrase(heard)
+    let target = normalize_phrase(target);
+    let heard = normalize_phrase(
+        &heard
+            .replace("[unk]", " ")
+            .replace("[UNK]", " "),
+    );
+    if target.is_empty() || heard.is_empty() {
+        return false;
+    }
+    if target == heard {
+        return true;
+    }
+    // «доброе утро пожалуйста» при цели «доброе утро»
+    heard.split_whitespace().collect::<Vec<_>>().windows(
+        target.split_whitespace().count().max(1),
+    ).any(|w| w.join(" ") == target)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -131,7 +147,10 @@ mod tests {
         assert_eq!(normalize_phrase("Спасибо, большое!"), "спасибо большое");
         assert!(speech_matches("Доброе утро", "доброе   утро"));
         assert!(speech_matches("Спасибо большое", "спасибо, большое!"));
+        assert!(speech_matches("Доброе утро", "доброе утро [unk]"));
+        assert!(speech_matches("Доброе утро", "ну доброе утро"));
         assert!(!speech_matches("Доброе утро", "добрый вечер"));
+        assert!(!speech_matches("Доброе утро", ""));
     }
 
     #[test]
