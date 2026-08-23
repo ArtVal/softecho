@@ -2,7 +2,7 @@
 
 use crate::engine::{
     AsrStatus, CheckResult, Command, Engine, Exercise, ExerciseStage, ModelDownloadState, Screen,
-    UserAnswer,
+    SpeechRating, UserAnswer,
 };
 use crate::ui::theme::apply_theme;
 use crate::ui::widgets::{big_button, footer_buttons, screen_scroll, str_byte_tail};
@@ -45,6 +45,9 @@ impl eframe::App for UiApp {
                 } => screen_scroll(ui, "fb", |ui| self.ui_feedback(ui, result, heard, expected)),
                 Screen::DiagnosisResult { level } => {
                     screen_scroll(ui, "diag_ok", |ui| self.ui_diagnosis_result(ui, level))
+                }
+                Screen::SpeechMap => {
+                    screen_scroll(ui, "speech_map", |ui| self.ui_speech_map(ui))
                 }
                 Screen::Dictaphone => self.ui_dictaphone(ui),
                 Screen::Settings => screen_scroll(ui, "settings", |ui| self.ui_settings(ui)),
@@ -109,6 +112,16 @@ impl UiApp {
                     .color(Color32::from_rgb(40, 70, 100)),
             );
 
+            ui.add_space(12.0);
+            if big_button(
+                ui,
+                "Карта произнесения",
+                Color32::from_rgb(100, 80, 150),
+            )
+            .clicked()
+            {
+                self.engine.handle(Command::OpenSpeechMap);
+            }
             ui.add_space(12.0);
             self.ui_home_voice_status(ui);
 
@@ -291,6 +304,84 @@ impl UiApp {
             ui.add_space(12.0);
             if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
                 self.engine.handle(Command::LeaveLevelPick);
+            }
+        });
+    }
+
+    fn ui_speech_map(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            ui.add_space(20.0);
+            ui.label(
+                RichText::new("Карта произнесения")
+                    .font(FontId::proportional(36.0))
+                    .strong(),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(format!("Набор: {}", self.engine.pack().title))
+                    .font(FontId::proportional(18.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(
+                    "Получается · почти · нужна практика — по результатам занятий и диагностики.\n\
+                     Слабые места идут первыми в следующем занятии.",
+                )
+                .font(FontId::proportional(16.0))
+                .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(20.0);
+
+            let entries = self.engine.speech_map_entries();
+            if entries.is_empty() {
+                ui.label(
+                    RichText::new("В этом наборе пока нет заданий.")
+                        .font(FontId::proportional(18.0))
+                        .color(Color32::DARK_GRAY),
+                );
+            } else {
+                let mut current_stage: Option<ExerciseStage> = None;
+                for entry in &entries {
+                if current_stage != Some(entry.stage) {
+                    current_stage = Some(entry.stage);
+                    ui.add_space(12.0);
+                    ui.label(
+                        RichText::new(entry.stage.label_ru())
+                            .font(FontId::proportional(22.0))
+                            .strong()
+                            .color(Color32::from_rgb(40, 70, 100)),
+                    );
+                    ui.add_space(8.0);
+                }
+                let color = match entry.rating {
+                    SpeechRating::Good => Color32::from_rgb(40, 130, 70),
+                    SpeechRating::Almost => Color32::from_rgb(180, 130, 30),
+                    SpeechRating::Weak => Color32::from_rgb(180, 60, 50),
+                    SpeechRating::Unknown => Color32::from_rgb(120, 120, 130),
+                };
+                let detail = if entry.attempts > 0 {
+                    format!(
+                        "{} — {}/{}",
+                        entry.rating.label_ru(),
+                        entry.correct,
+                        entry.attempts
+                    )
+                } else {
+                    entry.rating.label_ru().to_string()
+                };
+                ui.label(
+                    RichText::new(format!("{} · {}", entry.label, detail))
+                        .font(FontId::proportional(18.0))
+                        .color(color),
+                );
+                ui.add_space(4.0);
+                }
+            }
+
+            ui.add_space(24.0);
+            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::LeaveSpeechMap);
             }
         });
     }

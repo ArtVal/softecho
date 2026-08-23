@@ -41,6 +41,10 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         id: "food",
         bytes: include_bytes!("../../assets/exercises/food.json"),
     },
+    EmbeddedPack {
+        id: "transport",
+        bytes: include_bytes!("../../assets/exercises/transport.json"),
+    },
 ];
 
 /// Краткое описание встроенного набора (для экрана выбора).
@@ -229,7 +233,7 @@ mod tests {
             assert_eq!(pack.title, entry.title);
             assert!(!pack.exercises.is_empty());
         }
-        assert!(list_builtin_packs().len() >= 7);
+        assert!(list_builtin_packs().len() >= 8);
     }
 
     #[test]

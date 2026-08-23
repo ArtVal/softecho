@@ -1,0 +1,84 @@
+{
+  "title": "Транспорт",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "АВ",
+      "speak": "ав ав"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "БУС",
+      "speak": "бус бус"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "На чём едут по рельсам?",
+      "options": ["поезд", "лодка", "самолёт", "велосипед"],
+      "answer": "поезд"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "На чём летают?",
+      "options": ["самолёт", "автобус", "корабль", "трамвай"],
+      "answer": "самолёт"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Где покупают билет?",
+      "options": ["касса", "кухня", "кровать", "окно"],
+      "answer": "касса"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "автобус"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "машина"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "метро"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["Я", "еду", "домой"],
+      "answer": "Я еду домой"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["Где", "автобус"],
+      "answer": "Где автобус"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Я на вокзале"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Когда поезд"
+    }
+  ]
+}

@@ -10,8 +10,9 @@ use super::data::{
     DEFAULT_PACK_ID, PackCatalogEntry,
 };
 use super::exercise::{
-    build_diagnosis_set, check_answer, infer_level, order_session_for_level, speech_matches,
-    CheckResult, Exercise, ExercisePack, ExerciseStage, Progress, UserAnswer,
+    build_diagnosis_set, check_answer, infer_level, order_session_for_level_with_map, speech_matches,
+    pack_speech_entries, CheckResult, Exercise, ExercisePack, ExerciseStage, Progress, SpeechMapEntry,
+    UserAnswer,
 };
 use super::protocol::{Command, ModelDownloadState, Screen, TickResult};
 use super::vosk_download::{spawn_model_download, DownloadMsg};
@@ -275,7 +276,11 @@ impl Engine {
             self.screen = Screen::LevelPick;
             return;
         };
-        let exercises = order_session_for_level(self.pack.exercises.clone(), level);
+        let exercises = order_session_for_level_with_map(
+            self.pack.exercises.clone(),
+            level,
+            &self.progress.speech_map,
+        );
         if exercises.is_empty() {
             return;
         }
@@ -380,6 +385,9 @@ impl Engine {
                 Some(answer.clone())
             }
         };
+        self.progress
+            .record_speech(&ex, result == CheckResult::Correct);
+        self.persist_progress();
         self.screen = Screen::Feedback {
             result,
             heard,
@@ -788,6 +796,14 @@ impl Engine {
             Command::LeaveLevelPick => {
                 self.screen = Screen::Home;
             }
+            Command::OpenSpeechMap => {
+                self.abort_listen();
+                self.session = None;
+                self.screen = Screen::SpeechMap;
+            }
+            Command::LeaveSpeechMap => {
+                self.screen = Screen::Home;
+            }
             Command::SetLevel(level) => {
                 self.abort_listen();
                 self.set_level(level);
@@ -905,6 +921,10 @@ impl Engine {
 
     pub fn level(&self) -> Option<ExerciseStage> {
         self.progress.level
+    }
+
+    pub fn speech_map_entries(&self) -> Vec<SpeechMapEntry> {
+        pack_speech_entries(&self.pack, &self.progress.speech_map)
     }
 
     pub fn asr_status(&self) -> AsrStatus {
@@ -1191,6 +1211,33 @@ mod tests {
         assert!(matches!(eng.screen(), Screen::Home));
         assert!(eng.session().is_none());
         assert!(!eng.please_wait());
+    }
+
+    #[test]
+    fn submit_updates_speech_map() {
+        let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Syllable);
+        eng.handle(Command::StartSession);
+        let ex = eng.current_exercise().cloned().unwrap();
+        let key = ex.map_key().expect("ключ");
+        match ex {
+            Exercise::ChooseWord { answer, .. } => {
+                eng.handle(Command::Submit(UserAnswer::Choice(answer)));
+            }
+            Exercise::BuildPhrase { answer, .. } => {
+                let parts: Vec<_> = answer.split_whitespace().map(str::to_string).collect();
+                eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
+            }
+            Exercise::ReadAloud { .. } => {
+                eng.handle(Command::Submit(UserAnswer::ReadDone {
+                    matched: true,
+                    heard: None,
+                }));
+            }
+        }
+        let stat = eng.progress().speech_map.items.get(&key).unwrap();
+        assert_eq!(stat.attempts, 1);
+        assert_eq!(stat.correct, 1);
     }
 
     #[test]

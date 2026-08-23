@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,9 +99,25 @@ impl Exercise {
             Self::ReadAloud { speak, text, .. } => Some(speak.as_deref().unwrap_or(text)),
         }
     }
+
+    /// Ключ в карте произнесения (нормализованная цель).
+    pub fn map_key(&self) -> Option<String> {
+        self.target_text().map(normalize_phrase)
+    }
+
+    /// Подпись для UI карты.
+    pub fn map_label(&self) -> Option<String> {
+        match self {
+            Self::ReadAloud { text, .. } => Some(text.clone()),
+            Self::ChooseWord { answer, .. } | Self::BuildPhrase { answer, .. } => {
+                Some(answer.clone())
+            }
+        }
+    }
 }
 
 /// Внутри ступени — случайный порядок; между ступенями — нет.
+#[allow(dead_code)]
 pub fn order_session(exercises: Vec<Exercise>) -> Vec<Exercise> {
     use rand::seq::SliceRandom;
     let mut syllables = Vec::new();
@@ -122,15 +140,77 @@ pub fn order_session(exercises: Vec<Exercise>) -> Vec<Exercise> {
 }
 
 /// Занятие с выбранного уровня: от этой ступени и выше (слоги→слова→фразы).
+#[allow(dead_code)]
 pub fn order_session_for_level(
     exercises: Vec<Exercise>,
     level: ExerciseStage,
 ) -> Vec<Exercise> {
-    let filtered: Vec<_> = exercises
-        .into_iter()
-        .filter(|e| e.stage() >= level)
-        .collect();
-    order_session(filtered)
+    order_session_for_level_with_map(exercises, level, &SpeechMap::default())
+}
+
+/// То же, но внутри ступени сначала слабые места из карты.
+pub fn order_session_for_level_with_map(
+    exercises: Vec<Exercise>,
+    level: ExerciseStage,
+    map: &SpeechMap,
+) -> Vec<Exercise> {
+    let mut syllables = Vec::new();
+    let mut words = Vec::new();
+    let mut phrases = Vec::new();
+    for ex in exercises {
+        if ex.stage() < level {
+            continue;
+        }
+        match ex.stage() {
+            ExerciseStage::Syllable => syllables.push(ex),
+            ExerciseStage::Word => words.push(ex),
+            ExerciseStage::Phrase => phrases.push(ex),
+        }
+    }
+    let mut out = Vec::new();
+    out.extend(order_stage_by_map(syllables, map));
+    out.extend(order_stage_by_map(words, map));
+    out.extend(order_stage_by_map(phrases, map));
+    out
+}
+
+fn rating_priority(r: SpeechRating) -> u8 {
+    match r {
+        SpeechRating::Weak => 0,
+        SpeechRating::Almost => 1,
+        SpeechRating::Unknown => 2,
+        SpeechRating::Good => 3,
+    }
+}
+
+fn order_stage_by_map(mut exercises: Vec<Exercise>, map: &SpeechMap) -> Vec<Exercise> {
+    use rand::seq::SliceRandom;
+    if exercises.is_empty() {
+        return exercises;
+    }
+    exercises.sort_by_key(|e| {
+        e.map_key()
+            .map(|k| rating_priority(map.rating(&k)))
+            .unwrap_or(2)
+    });
+    let mut rng = rand::rng();
+    let mut buckets: Vec<(u8, Vec<Exercise>)> = Vec::new();
+    for ex in exercises {
+        let p = ex
+            .map_key()
+            .map(|k| rating_priority(map.rating(&k)))
+            .unwrap_or(2);
+        if buckets.last().map(|(k, _)| *k) != Some(p) {
+            buckets.push((p, Vec::new()));
+        }
+        buckets.last_mut().unwrap().1.push(ex);
+    }
+    let mut out = Vec::new();
+    for (_, mut group) in buckets {
+        group.shuffle(&mut rng);
+        out.extend(group);
+    }
+    out
 }
 
 /// Короткий набор для экспресс-диагностики: до `per_stage` заданий на ступень.
@@ -276,6 +356,103 @@ pub fn speech_matches(target: &str, heard: &str) -> bool {
     h_words.windows(t_words.len().max(1)).any(|w| w == t_words.as_slice())
 }
 
+/// Оценка произнесения одной цели (слог / слово / фраза).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeechRating {
+    Unknown,
+    Good,
+    Almost,
+    Weak,
+}
+
+impl SpeechRating {
+    pub fn label_ru(self) -> &'static str {
+        match self {
+            Self::Unknown => "ещё не пробовали",
+            Self::Good => "получается",
+            Self::Almost => "почти",
+            Self::Weak => "нужна практика",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WordStat {
+    pub correct: u32,
+    pub attempts: u32,
+}
+
+impl WordStat {
+    pub fn rating(&self) -> SpeechRating {
+        if self.attempts == 0 {
+            return SpeechRating::Unknown;
+        }
+        let ratio = self.correct as f32 / self.attempts as f32;
+        if ratio >= 0.75 {
+            SpeechRating::Good
+        } else if ratio >= 0.35 {
+            SpeechRating::Almost
+        } else {
+            SpeechRating::Weak
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SpeechMap {
+    #[serde(default)]
+    pub items: HashMap<String, WordStat>,
+}
+
+impl SpeechMap {
+    pub fn record(&mut self, key: &str, correct: bool) {
+        let stat = self.items.entry(key.to_string()).or_default();
+        stat.attempts += 1;
+        if correct {
+            stat.correct += 1;
+        }
+    }
+
+    pub fn rating(&self, key: &str) -> SpeechRating {
+        self.items
+            .get(key)
+            .map(WordStat::rating)
+            .unwrap_or(SpeechRating::Unknown)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SpeechMapEntry {
+    pub label: String,
+    pub stage: ExerciseStage,
+    pub rating: SpeechRating,
+    pub correct: u32,
+    pub attempts: u32,
+}
+
+/// Уникальные цели текущего набора + статистика из карты.
+pub fn pack_speech_entries(pack: &ExercisePack, map: &SpeechMap) -> Vec<SpeechMapEntry> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for ex in &pack.exercises {
+        let Some(key) = ex.map_key() else {
+            continue;
+        };
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let stat = map.items.get(&key).cloned().unwrap_or_default();
+        out.push(SpeechMapEntry {
+            label: ex.map_label().unwrap_or(key),
+            stage: ex.stage(),
+            rating: stat.rating(),
+            correct: stat.correct,
+            attempts: stat.attempts,
+        });
+    }
+    out
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Progress {
     pub sessions_completed: u32,
@@ -287,6 +464,9 @@ pub struct Progress {
     /// Выбранный набор упражнений (`starter`, `daily`, …).
     #[serde(default)]
     pub pack_id: Option<String>,
+    /// Локальная карта: что получается по слогам/словам/фразам.
+    #[serde(default)]
+    pub speech_map: SpeechMap,
 }
 
 impl Progress {
@@ -302,6 +482,12 @@ impl Progress {
 
     pub fn set_pack(&mut self, pack_id: &str) {
         self.pack_id = Some(pack_id.to_string());
+    }
+
+    pub fn record_speech(&mut self, exercise: &Exercise, correct: bool) {
+        if let Some(key) = exercise.map_key() {
+            self.speech_map.record(&key, correct);
+        }
     }
 }
 
@@ -540,5 +726,54 @@ mod tests {
         assert_eq!(p.sessions_completed, 2);
         assert_eq!(p.total_correct, 5);
         assert_eq!(p.total_answered, 9);
+    }
+
+    #[test]
+    fn speech_map_ratings() {
+        let mut map = SpeechMap::default();
+        map.record("мама", true);
+        map.record("мама", true);
+        map.record("мама", true);
+        assert_eq!(map.rating("мама"), SpeechRating::Good);
+        map.record("па", false);
+        map.record("па", false);
+        assert_eq!(map.rating("па"), SpeechRating::Weak);
+        assert_eq!(map.rating("нет"), SpeechRating::Unknown);
+    }
+
+    #[test]
+    fn smart_order_puts_weak_first_in_stage() {
+        let pack = vec![
+            Exercise::ReadAloud {
+                stage: Some(ExerciseStage::Word),
+                prompt: "a".into(),
+                text: "хлеб".into(),
+                speak: None,
+            },
+            Exercise::ReadAloud {
+                stage: Some(ExerciseStage::Word),
+                prompt: "b".into(),
+                text: "чай".into(),
+                speak: None,
+            },
+            Exercise::ReadAloud {
+                stage: Some(ExerciseStage::Word),
+                prompt: "c".into(),
+                text: "стол".into(),
+                speak: None,
+            },
+        ];
+        let mut map = SpeechMap::default();
+        map.record("хлеб", true);
+        map.record("хлеб", true);
+        map.record("чай", false);
+        map.record("чай", false);
+        let ordered = order_session_for_level_with_map(pack, ExerciseStage::Word, &map);
+        let labels: Vec<_> = ordered
+            .iter()
+            .filter_map(|e| e.map_label())
+            .collect();
+        assert_eq!(labels[0], "чай");
+        assert_eq!(labels.last().unwrap(), "хлеб");
     }
 }

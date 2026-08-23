@@ -22,6 +22,8 @@ pub enum Screen {
     DiagnosisResult {
         level: ExerciseStage,
     },
+    /// Карта произнесения по текущему набору.
+    SpeechMap,
     Dictaphone,
     Settings,
     Result {
@@ -45,6 +47,8 @@ pub enum Command {
     SetPack(String),
     OpenLevelPick,
     LeaveLevelPick,
+    OpenSpeechMap,
+    LeaveSpeechMap,
     /// Ручная установка уровня (сохраняется локально).
     SetLevel(ExerciseStage),
     OpenDictaphone,
