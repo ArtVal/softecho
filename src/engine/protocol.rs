@@ -64,6 +64,8 @@ pub enum Command {
     SkipRepeatAndAdvance,
     Submit(UserAnswer),
     ListenExercise,
+    /// Закончить запись слога/слова (принять partial и проверить).
+    StopExerciseListen,
     ListenDictaphone,
     StopDictaphone,
     ClearDictaphone,

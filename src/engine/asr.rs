@@ -40,11 +40,14 @@ impl Default for ListenConfig {
 
 #[allow(dead_code)] // вызывается из vosk_impl при feature = "asr"
 impl ListenConfig {
-    pub fn single_utterance(live_partial: Arc<Mutex<String>>) -> Self {
+    pub fn single_utterance(
+        live_partial: Arc<Mutex<String>>,
+        stop: Option<Arc<AtomicBool>>,
+    ) -> Self {
         Self {
             continuous: false,
             max_duration: Duration::from_secs(60),
-            stop: None,
+            stop,
             live_partial: Some(live_partial),
         }
     }
@@ -162,6 +165,8 @@ mod vosk_impl {
     const CATCH_UP_START: usize = catch_up_start_frames();
 
     const SILENCE_AFTER_SPEECH: Duration = Duration::from_millis(1200);
+    /// Короткая пауза для одного слога/слова — не держим кнопку «Сказать» вечно.
+    const SILENCE_SINGLE_UTTERANCE: Duration = Duration::from_millis(850);
     const NO_SPEECH_TIMEOUT: Duration = Duration::from_secs(12);
     const SPEECH_RMS: f32 = 700.0;
 
@@ -360,6 +365,11 @@ mod vosk_impl {
         recognizer.set_partial_words(true);
 
         let session_start = Instant::now();
+        let silence_after = if config.continuous {
+            SILENCE_AFTER_SPEECH
+        } else {
+            SILENCE_SINGLE_UTTERANCE
+        };
         let mut last_single = String::new();
         let mut got_any = false;
         let mut utter_start = Instant::now();
@@ -441,7 +451,7 @@ mod vosk_impl {
                 if catching_up {
                     continue;
                 }
-                if heard_speech && last_loud.elapsed() >= SILENCE_AFTER_SPEECH {
+                if heard_speech && last_loud.elapsed() >= silence_after {
                     let stop = commit_utterance(
                         &mut recognizer,
                         events,
@@ -480,7 +490,10 @@ mod vosk_impl {
             let loud = chunk_rms(&samples) >= SPEECH_RMS;
             if loud {
                 heard_speech = true;
-                last_loud = Instant::now();
+                // При стабильном partial фоновый шум не должен сбрасывать таймер паузы.
+                if last_partial.is_empty() {
+                    last_loud = Instant::now();
+                }
             }
 
             match recognizer.accept_waveform(&samples) {
@@ -517,7 +530,7 @@ mod vosk_impl {
                 Ok(DecodingState::Finalized) | Ok(DecodingState::Failed) | Err(_) => {}
             }
 
-            if !loud && heard_speech && last_loud.elapsed() >= SILENCE_AFTER_SPEECH {
+            if heard_speech && last_loud.elapsed() >= silence_after {
                 let stop = commit_utterance(
                     &mut recognizer,
                     events,

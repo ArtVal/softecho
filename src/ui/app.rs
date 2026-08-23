@@ -764,6 +764,10 @@ impl UiApp {
                         .strong()
                         .color(Color32::from_rgb(20, 40, 60)),
                     );
+                    ui.add_space(16.0);
+                    if big_button(ui, "Готово", Color32::from_rgb(40, 130, 90)).clicked() {
+                        self.engine.handle(Command::StopExerciseListen);
+                    }
                 } else if big_button(ui, "Сказать", Color32::from_rgb(140, 60, 100)).clicked() {
                     self.engine.handle(Command::ListenExercise);
                 }
@@ -783,7 +787,7 @@ impl UiApp {
             ui.add_space(8.0);
             if listening {
                 ui.label(
-                    RichText::new("Подождите окончания записи…")
+                    RichText::new("Или нажмите «Готово», если слог уже сказали")
                         .font(FontId::proportional(18.0))
                         .color(Color32::DARK_GRAY),
                 );

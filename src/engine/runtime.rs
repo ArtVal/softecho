@@ -118,6 +118,8 @@ pub struct Engine {
     listen_purpose: Option<ListenPurpose>,
     /// Живой partial текущей записи (ASR пишет сюда, UI читает).
     listen_live: Arc<Mutex<String>>,
+    /// Сигнал «Готово» на экране упражнения.
+    exercise_listen_stop: Option<Arc<AtomicBool>>,
     /// Vosk разгребает буфер — показать «подождите».
     please_wait: bool,
     dictaphone: DictaphoneState,
@@ -161,6 +163,7 @@ impl Engine {
             listen_target: None,
             listen_purpose: None,
             listen_live: Arc::new(Mutex::new(String::new())),
+            exercise_listen_stop: None,
             please_wait: false,
             dictaphone: DictaphoneState::default(),
             model_download: ModelDownloadState::default(),
@@ -567,6 +570,9 @@ impl Engine {
             session.live_text.clear();
         }
 
+        let stop = Arc::new(AtomicBool::new(false));
+        self.exercise_listen_stop = Some(Arc::clone(&stop));
+
         let live = Arc::clone(&self.listen_live);
         if let Ok(mut g) = live.lock() {
             g.clear();
@@ -576,8 +582,14 @@ impl Engine {
             grammar,
             Some(target),
             ListenPurpose::Exercise,
-            ListenConfig::single_utterance(live),
+            ListenConfig::single_utterance(live, Some(stop)),
         );
+    }
+
+    fn stop_exercise_listen(&mut self) {
+        if let Some(stop) = &self.exercise_listen_stop {
+            stop.store(true, Ordering::Relaxed);
+        }
     }
 
     fn try_listen_dictaphone(&mut self) {
@@ -706,6 +718,24 @@ impl Engine {
         }
     }
 
+    fn exercise_heard_text(&self, heard: &str) -> String {
+        let trimmed = heard.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+        let from_ui = self
+            .session()
+            .map(|s| s.live_text.trim().to_string())
+            .unwrap_or_default();
+        if !from_ui.is_empty() {
+            return from_ui;
+        }
+        self.listen_live
+            .lock()
+            .map(|g| g.trim().to_string())
+            .unwrap_or_default()
+    }
+
     fn flush_dictaphone_live_tail(&mut self) {
         let live_tail = self.dictaphone_live_tail();
         if !live_tail.is_empty() {
@@ -827,6 +857,7 @@ impl Engine {
                 }
                 ListenEvent::Done(outcome) => {
                     self.listen_rx = None;
+                    self.exercise_listen_stop = None;
                     self.please_wait = false;
                     let target = self.listen_target.take().unwrap_or_default();
                     let purpose = self.listen_purpose.take();
@@ -873,13 +904,18 @@ impl Engine {
                             }
                             match outcome {
                                 Ok(heard) => {
+                                    let text = self.exercise_heard_text(&heard.text);
                                     if let Some(session) = self.session.as_mut() {
-                                        session.live_text = heard.text.clone();
+                                        session.live_text = text.clone();
                                     }
-                                    let matched = speech_matches(&target, &heard.text);
+                                    let matched = speech_matches(&target, &text);
                                     self.submit(UserAnswer::ReadDone {
                                         matched,
-                                        heard: Some(heard.text),
+                                        heard: if text.is_empty() {
+                                            None
+                                        } else {
+                                            Some(text)
+                                        },
                                     });
                                 }
                                 Err(e) => {
@@ -898,6 +934,10 @@ impl Engine {
     }
 
     fn abort_listen(&mut self) {
+        if let Some(stop) = &self.exercise_listen_stop {
+            stop.store(true, Ordering::Relaxed);
+        }
+        self.exercise_listen_stop = None;
         self.listen_rx = None;
         self.listen_target = None;
         self.listen_purpose = None;
@@ -985,6 +1025,7 @@ impl Engine {
             Command::SkipRepeatAndAdvance => self.advance_after_feedback(true),
             Command::Submit(answer) => self.submit(answer),
             Command::ListenExercise => self.try_listen(),
+            Command::StopExerciseListen => self.stop_exercise_listen(),
             Command::ListenDictaphone => self.try_listen_dictaphone(),
             Command::StopDictaphone => self.stop_dictaphone(),
             Command::ClearDictaphone => self.clear_dictaphone_buffer(),
