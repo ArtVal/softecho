@@ -23,7 +23,9 @@
 
 ## Скачать готовый бинарник
 
-Сборки лежат в **GitHub Actions** (не на странице Releases):
+**Релизы:** [GitHub Releases](https://github.com/ArtVal/softecho/releases) — архивы `text` и `asr` для Windows, Linux и macOS (тег `v*`).
+
+Запасной путь — артефакты CI:
 
 1. [Actions](https://github.com/ArtVal/softecho/actions) → workflow **windows-portable** / **linux-portable** / **macos-portable**
 2. Успешный run → внизу **Artifacts**

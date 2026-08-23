@@ -110,28 +110,7 @@ impl UiApp {
             );
 
             ui.add_space(12.0);
-            match self.engine.asr_status() {
-                AsrStatus::Ready => ui.label(
-                    RichText::new("Голос: готов (Vosk)")
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::from_rgb(30, 120, 60)),
-                ),
-                AsrStatus::ModelMissing => ui.label(
-                    RichText::new("Голос: модель не найдена — откройте «Настройки» сверху")
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::from_rgb(150, 90, 30)),
-                ),
-                AsrStatus::Disabled => ui.label(
-                    RichText::new("Голос: выключен в сборке (текстовый режим)")
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::DARK_GRAY),
-                ),
-                AsrStatus::Error(e) => ui.label(
-                    RichText::new(format!("Голос: {e}"))
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::from_rgb(160, 60, 40)),
-                ),
-            };
+            self.ui_home_voice_status(ui);
 
             if let Some(err) = self.engine.load_error() {
                 ui.colored_label(Color32::RED, err);
@@ -166,6 +145,84 @@ impl UiApp {
                 );
             }
         });
+    }
+
+    fn ui_home_voice_status(&mut self, ui: &mut egui::Ui) {
+        match self.engine.asr_status() {
+            AsrStatus::Ready => {
+                ui.label(
+                    RichText::new("Голос: готов (Vosk)")
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::from_rgb(30, 120, 60)),
+                );
+            }
+            AsrStatus::ModelMissing => {
+                ui.label(
+                    RichText::new("Голос: нужна модель Vosk (~45 МБ, интернет один раз)")
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::from_rgb(150, 90, 30)),
+                );
+                ui.add_space(12.0);
+                match self.engine.model_download() {
+                    ModelDownloadState::Working { label, percent } => {
+                        ui.label(
+                            RichText::new(label)
+                                .font(FontId::proportional(18.0))
+                                .strong(),
+                        );
+                        if let Some(p) = percent {
+                            ui.add_space(8.0);
+                            ui.add(
+                                egui::ProgressBar::new(f32::from(*p) / 100.0)
+                                    .text(format!("{p}%"))
+                                    .desired_width(320.0),
+                            );
+                        } else {
+                            ui.add_space(8.0);
+                            ui.spinner();
+                        }
+                    }
+                    ModelDownloadState::Failed(err) => {
+                        ui.colored_label(Color32::from_rgb(160, 60, 40), err);
+                        ui.add_space(8.0);
+                        if big_button(ui, "Повторить загрузку", Color32::from_rgb(40, 110, 180))
+                            .clicked()
+                        {
+                            self.engine.handle(Command::StartModelDownload);
+                        }
+                    }
+                    _ => {
+                        if big_button(ui, "Скачать модель", Color32::from_rgb(40, 110, 180))
+                            .clicked()
+                        {
+                            self.engine.handle(Command::StartModelDownload);
+                        }
+                    }
+                }
+                if let Some(note) = self.engine.model_download_note() {
+                    ui.add_space(8.0);
+                    ui.label(
+                        RichText::new(note)
+                            .font(FontId::proportional(16.0))
+                            .color(Color32::from_rgb(30, 120, 60)),
+                    );
+                }
+            }
+            AsrStatus::Disabled => {
+                ui.label(
+                    RichText::new("Голос: выключен в сборке (текстовый режим)")
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::DARK_GRAY),
+                );
+            }
+            AsrStatus::Error(e) => {
+                ui.label(
+                    RichText::new(format!("Голос: {e}"))
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::from_rgb(160, 60, 40)),
+                );
+            }
+        }
     }
 
     fn ui_pack_pick(&mut self, ui: &mut egui::Ui) {
