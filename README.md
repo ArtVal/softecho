@@ -1,6 +1,6 @@
-# Речевой тренажёр (stroke_trainer)
+# SoftEcho (`softecho`)
 
-Десктоп-приложение на Rust для восстановления речевых функций после инсульта.
+Домашний десктоп-тренажёр речи после инсульта / афазии. Офлайн, с проверкой произнесения.
 
 ## Платформы
 
@@ -20,7 +20,7 @@
 cargo run --release
 ```
 
-Бинарник: `target/release/stroke_trainer` (на Windows — `stroke_trainer.exe`).
+Бинарник: `target/release/softecho` (на Windows — `softecho.exe`).
 
 ### Зависимости для сборки UI
 
@@ -63,7 +63,7 @@ cargo clippy --features asr -- -D warnings
 | **С голосом** | `./scripts/fetch-vosk-windows.sh` затем `./scripts/package-windows-portable.sh --asr` |
 | **Модель в zip** | `INCLUDE_MODEL=1 ./scripts/package-windows-portable.sh --asr` |
 
-Артефакты: `dist/stroke_trainer-windows-x86_64-text.zip` и `…-asr.zip`.
+Артефакты: `dist/softecho-windows-x86_64-text.zip` и `…-asr.zip`.
 
 ## Что умеет сейчас
 

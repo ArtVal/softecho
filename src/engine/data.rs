@@ -57,7 +57,7 @@ fn validate_pack(pack: &ExercisePack) -> Result<(), String> {
 }
 
 fn data_dir() -> Result<PathBuf, String> {
-    let dirs = ProjectDirs::from("ru", "stroke", "stroke_trainer")
+    let dirs = ProjectDirs::from("app", "SoftEcho", "SoftEcho")
         .ok_or_else(|| "Не удалось определить каталог данных".to_string())?;
     let path = dirs.data_dir().to_path_buf();
     fs::create_dir_all(&path).map_err(|e| format!("Не удалось создать {path:?}: {e}"))?;
@@ -155,13 +155,15 @@ mod tests {
 
     #[test]
     fn dictaphone_txt_append_and_save() {
-        let path = new_dictaphone_path().expect("путь диктофона");
+        let dir = std::env::temp_dir().join(format!("softecho-dictaphone-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("dictaphone_test.txt");
         append_dictaphone_text(&path, "раз").unwrap();
         append_dictaphone_text(&path, "\nдва").unwrap();
         let got = fs::read_to_string(&path).unwrap();
         assert_eq!(got, "раз\nдва");
         save_dictaphone_text(&path, "итог").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "итог");
-        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

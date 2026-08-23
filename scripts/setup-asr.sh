@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Подготовка микрофона (Vosk) для stroke_trainer на Fedora/RHEL-подобных.
+# Подготовка микрофона (Vosk) для SoftEcho (softecho) на Fedora/RHEL-подобных.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODEL_DIR="$ROOT/assets/vosk/vosk-model-small-ru-0.22"

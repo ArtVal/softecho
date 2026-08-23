@@ -52,7 +52,7 @@ impl UiApp {
         ui.vertical_centered(|ui| {
             ui.add_space(40.0);
             ui.label(
-                RichText::new("Речевой тренажёр")
+                RichText::new("SoftEcho")
                     .font(FontId::proportional(42.0))
                     .strong()
                     .color(Color32::from_rgb(20, 40, 60)),

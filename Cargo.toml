@@ -1,10 +1,10 @@
 [package]
-name = "stroke_trainer"
+name = "softecho"
 version = "0.1.0"
 edition = "2021"
-description = "Десктоп-тренажёр речи после инсульта"
+description = "SoftEcho — домашний десктоп-тренажёр речи (офлайн)"
 license = "MIT"
-default-run = "stroke_trainer"
+default-run = "softecho"
 
 [features]
 default = []

@@ -62,7 +62,7 @@ if [[ -n "$TARGET" ]]; then
 else
   BIN_DIR="$ROOT/target/release"
 fi
-EXE="$BIN_DIR/stroke_trainer.exe"
+EXE="$BIN_DIR/softecho.exe"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   echo "==> Сборка release (asr=$WITH_ASR, target=${TARGET:-host})"
@@ -102,7 +102,7 @@ if [[ ! -f "$EXE" ]]; then
   exit 1
 fi
 
-OUT="$ROOT/dist/stroke_trainer-windows-x86_64-${NAME_SUFFIX}"
+OUT="$ROOT/dist/softecho-windows-x86_64-${NAME_SUFFIX}"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cp -v "$EXE" "$OUT/"
@@ -125,22 +125,22 @@ if [[ "${INCLUDE_MODEL:-0}" == "1" ]]; then
 fi
 
 cat > "$OUT/ЧТОБЫ_ЗАПУСТИТЬ.txt" << 'EOF'
-Речевой тренажёр — portable (Windows x86_64)
+SoftEcho — portable (Windows x86_64)
 
 1. Распакуйте всю папку целиком (не только .exe).
-2. Запустите stroke_trainer.exe
+2. Запустите softecho.exe
 
 Голос (ASR):
 - Рядом с exe: libvosk.dll (и vosk.dll, если есть).
 - Модель: папка vosk-model-small-ru-0.22 рядом с exe
   https://alphacephei.com/vosk/models (vosk-model-small-ru-0.22)
-  или %APPDATA%\stroke\stroke_trainer\vosk-model-small-ru-0.22
+  или %APPDATA%\SoftEcho\SoftEcho\vosk-model-small-ru-0.22
 
 Без модели/DLL — текстовый режим. Установщик не нужен.
 EOF
 
 mkdir -p "$ROOT/dist"
-ZIP="$ROOT/dist/stroke_trainer-windows-x86_64-${NAME_SUFFIX}.zip"
+ZIP="$ROOT/dist/softecho-windows-x86_64-${NAME_SUFFIX}.zip"
 rm -f "$ZIP"
 if command -v zip >/dev/null 2>&1; then
   ( cd "$ROOT/dist" && zip -r -q "$(basename "$ZIP")" "$(basename "$OUT")" )
