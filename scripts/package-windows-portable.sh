@@ -125,13 +125,31 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 cp -v "$EXE" "$OUT/"
 
-for dll in libvosk.dll vosk.dll; do
-  if [[ -f "$BIN_DIR/$dll" ]]; then
-    cp -v "$BIN_DIR/$dll" "$OUT/"
-  elif [[ -f "$ROOT/native/vosk/libvosk.dll" && "$WITH_ASR" -eq 1 ]]; then
-    cp -v "$ROOT/native/vosk/libvosk.dll" "$OUT/$dll"
+# libvosk.dll собран MinGW — рядом нужны его runtime DLL из vosk-win64.
+copy_dll() {
+  local name="$1"
+  if [[ -f "$BIN_DIR/$name" ]]; then
+    cp -v "$BIN_DIR/$name" "$OUT/"
+  elif [[ -f "$ROOT/native/vosk/$name" ]]; then
+    cp -v "$ROOT/native/vosk/$name" "$OUT/"
+  else
+    return 1
   fi
-done
+}
+
+if [[ "$WITH_ASR" -eq 1 ]]; then
+  copy_dll libvosk.dll || { echo "Нет libvosk.dll для ASR" >&2; exit 1; }
+  # Дубликат имени на случай загрузчика vosk.dll
+  if [[ ! -f "$OUT/vosk.dll" ]]; then
+    cp -v "$OUT/libvosk.dll" "$OUT/vosk.dll"
+  fi
+  for dll in libwinpthread-1.dll libgcc_s_seh-1.dll 'libstdc++-6.dll'; do
+    if ! copy_dll "$dll"; then
+      echo "Нет $dll (нужен полный vosk-win64). Запустите: ./scripts/fetch-vosk-windows.sh" >&2
+      exit 1
+    fi
+  done
+fi
 
 if [[ "${INCLUDE_MODEL:-0}" == "1" ]]; then
   MODEL_SRC="$ROOT/assets/vosk/vosk-model-small-ru-0.22"
@@ -149,13 +167,15 @@ SoftEcho — portable (Windows x86_64)
 2. Запустите softecho.exe
 
 Голос (ASR):
-- Рядом с exe: libvosk.dll (и vosk.dll, если есть).
+- Рядом с exe должны лежать: libvosk.dll, vosk.dll,
+  libwinpthread-1.dll, libgcc_s_seh-1.dll, libstdc++-6.dll
+  (все из архива — не переносите только .exe).
 - Модель: Настройки → «Скачать модель» (интернет один раз)
   или папка vosk-model-small-ru-0.22 рядом с exe
   https://alphacephei.com/vosk/models (vosk-model-small-ru-0.22)
   или %APPDATA%\SoftEcho\SoftEcho\vosk-model-small-ru-0.22
 
-Без модели/DLL — текстовый режим. Установщик не нужен.
+Без модели — текстовый режим. Установщик не нужен.
 EOF
 
 mkdir -p "$ROOT/dist"

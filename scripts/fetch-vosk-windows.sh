@@ -14,17 +14,26 @@ echo "==> Скачиваю $URL"
 curl -L --fail --retry 3 -o "$TMP/vosk-win.zip" "$URL"
 unzip -o "$TMP/vosk-win.zip" -d "$TMP"
 
-# Архив: vosk-win64-.../libvosk.dll, libvosk.lib, ...
-DLL="$(find "$TMP" -name 'libvosk.dll' | head -n1)"
+# Архив: vosk-win64-.../libvosk.dll + MinGW runtime (без них exe падает на чужой машине).
+copy_from_zip() {
+  local name="$1"
+  local src
+  src="$(find "$TMP" -name "$name" | head -n1)"
+  if [[ -z "$src" ]]; then
+    echo "В архиве нет $name" >&2
+    return 1
+  fi
+  cp -v "$src" "$NATIVE_DIR/$name"
+}
+
+copy_from_zip libvosk.dll
+copy_from_zip libwinpthread-1.dll
+copy_from_zip libgcc_s_seh-1.dll
+copy_from_zip 'libstdc++-6.dll'
 LIB="$(find "$TMP" -name 'libvosk.lib' | head -n1)"
-if [[ -z "$DLL" ]]; then
-  echo "В архиве нет libvosk.dll" >&2
-  exit 1
-fi
-cp -v "$DLL" "$NATIVE_DIR/libvosk.dll"
 if [[ -n "$LIB" ]]; then
   cp -v "$LIB" "$NATIVE_DIR/libvosk.lib"
 fi
 
-echo "Готово: $NATIVE_DIR/libvosk.dll"
-ls -la "$NATIVE_DIR"/libvosk.*
+echo "Готово: $NATIVE_DIR/ (libvosk + MinGW runtime)"
+ls -la "$NATIVE_DIR"/*.dll "$NATIVE_DIR"/libvosk.lib 2>/dev/null || ls -la "$NATIVE_DIR"

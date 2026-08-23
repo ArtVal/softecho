@@ -92,7 +92,7 @@ cargo run --release --features asr
 | ОС | Скрипт | Файл |
 |----|--------|------|
 | Linux | `./scripts/fetch-vosk-linux.sh` | `native/vosk/libvosk.so` |
-| Windows | `./scripts/fetch-vosk-windows.sh` | `native/vosk/libvosk.dll` |
+| Windows | `./scripts/fetch-vosk-windows.sh` | `libvosk.dll` + MinGW runtime (`libwinpthread-1.dll`, …) |
 | macOS | `./scripts/fetch-vosk-macos.sh` | `native/vosk/libvosk.dylib` (0.3.42) |
 
 Полная подготовка на Fedora: `./scripts/setup-asr.sh`.

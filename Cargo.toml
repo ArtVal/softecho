@@ -6,6 +6,10 @@ description = "SoftEcho — offline desktop speech trainer for post-stroke recov
 license = "MIT"
 default-run = "softecho"
 
+[[bin]]
+name = "softecho"
+path = "src/main.rs"
+
 [features]
 default = []
 asr = ["dep:vosk", "dep:cpal"]

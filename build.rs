@@ -90,6 +90,24 @@ fn setup_windows(manifest: &std::path::Path, lib_dir: &std::path::Path) {
     copy_next_to_binary(manifest, &dll, "libvosk.dll");
     // На случай, если загрузчик ищет vosk.dll
     copy_next_to_binary(manifest, &dll, "vosk.dll");
+    // MinGW runtime из того же vosk-win64 (иначе «не найден libwinpthread-1.dll»)
+    for runtime in [
+        "libwinpthread-1.dll",
+        "libgcc_s_seh-1.dll",
+        "libstdc++-6.dll",
+    ] {
+        let src = lib_dir.join(runtime);
+        if src.exists() {
+            copy_next_to_binary(manifest, &src, runtime);
+            println!("cargo:rerun-if-changed={}", src.display());
+        } else {
+            println!(
+                "cargo:warning=Нет {} — ASR-сборка может не запуститься на другой машине. \
+                 Запустите ./scripts/fetch-vosk-windows.sh",
+                src.display()
+            );
+        }
+    }
 }
 
 fn copy_next_to_binary(manifest: &std::path::Path, src: &std::path::Path, dest_name: &str) {
