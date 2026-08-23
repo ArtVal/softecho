@@ -101,8 +101,9 @@ impl Exercise {
     }
 
     /// Ключ в карте произнесения (нормализованная цель).
+    /// Повтор слога «ма ма ма» и ответ «ма» дают один ключ — иначе карта не склеивает ступени.
     pub fn map_key(&self) -> Option<String> {
-        self.target_text().map(normalize_phrase)
+        self.target_text().map(speech_map_key)
     }
 
     /// Подпись для UI карты.
@@ -303,6 +304,17 @@ pub fn normalize_phrase(s: &str) -> String {
         .join(" ")
 }
 
+/// Ключ карты: нормализация + свёртка повторов («ма ма ма» → «ма»).
+pub fn speech_map_key(target: &str) -> String {
+    let n = normalize_phrase(target);
+    let words: Vec<&str> = n.split_whitespace().collect();
+    if !words.is_empty() && words.iter().all(|w| *w == words[0]) {
+        words[0].to_string()
+    } else {
+        n
+    }
+}
+
 pub fn check_answer(exercise: &Exercise, answer: &UserAnswer) -> CheckResult {
     match (exercise, answer) {
         (Exercise::ChooseWord { answer: expected, .. }, UserAnswer::Choice(got)) => {
@@ -406,7 +418,8 @@ pub struct SpeechMap {
 
 impl SpeechMap {
     pub fn record(&mut self, key: &str, correct: bool) {
-        let stat = self.items.entry(key.to_string()).or_default();
+        let key = speech_map_key(key);
+        let stat = self.items.entry(key).or_default();
         stat.attempts += 1;
         if correct {
             stat.correct += 1;
@@ -414,10 +427,29 @@ impl SpeechMap {
     }
 
     pub fn rating(&self, key: &str) -> SpeechRating {
+        let key = speech_map_key(key);
         self.items
-            .get(key)
+            .get(&key)
             .map(WordStat::rating)
             .unwrap_or(SpeechRating::Unknown)
+    }
+
+    /// Склеить старые ключи «ма ма ма» с каноническим «ма» (после обновления).
+    pub fn normalize_keys(&mut self) {
+        if self.items.is_empty() {
+            return;
+        }
+        let mut merged: HashMap<String, WordStat> = HashMap::new();
+        for (k, v) in std::mem::take(&mut self.items) {
+            let nk = speech_map_key(&k);
+            let e = merged.entry(nk).or_default();
+            e.correct = e.correct.saturating_add(v.correct);
+            e.attempts = e.attempts.saturating_add(v.attempts);
+            if e.correct > e.attempts {
+                e.correct = e.attempts;
+            }
+        }
+        self.items = merged;
     }
 }
 
@@ -431,24 +463,27 @@ pub struct SpeechMapEntry {
 }
 
 /// Уникальные цели текущего набора + статистика из карты.
+/// Сначала слоги, потом слова, потом фразы (чтобы заголовки UI не прыгали).
 pub fn pack_speech_entries(pack: &ExercisePack, map: &SpeechMap) -> Vec<SpeechMapEntry> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
-    for ex in &pack.exercises {
-        let Some(key) = ex.map_key() else {
-            continue;
-        };
-        if !seen.insert(key.clone()) {
-            continue;
+    for stage in ExerciseStage::ALL {
+        for ex in pack.exercises.iter().filter(|e| e.stage() == stage) {
+            let Some(key) = ex.map_key() else {
+                continue;
+            };
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            let stat = map.items.get(&key).cloned().unwrap_or_default();
+            out.push(SpeechMapEntry {
+                label: ex.map_label().unwrap_or(key),
+                stage,
+                rating: stat.rating(),
+                correct: stat.correct,
+                attempts: stat.attempts,
+            });
         }
-        let stat = map.items.get(&key).cloned().unwrap_or_default();
-        out.push(SpeechMapEntry {
-            label: ex.map_label().unwrap_or(key),
-            stage: ex.stage(),
-            rating: stat.rating(),
-            correct: stat.correct,
-            attempts: stat.attempts,
-        });
     }
     out
 }
@@ -726,6 +761,90 @@ mod tests {
         assert_eq!(p.sessions_completed, 2);
         assert_eq!(p.total_correct, 5);
         assert_eq!(p.total_answered, 9);
+    }
+
+    #[test]
+    fn speech_map_key_collapses_syllable_repeats() {
+        assert_eq!(speech_map_key("ма ма ма"), "ма");
+        assert_eq!(speech_map_key("МА"), "ма");
+        assert_eq!(speech_map_key("дом дом"), "дом");
+        assert_eq!(speech_map_key("Я пью воду"), "я пью воду");
+        let syllable = Exercise::ReadAloud {
+            stage: Some(ExerciseStage::Syllable),
+            prompt: "s".into(),
+            text: "МА".into(),
+            speak: Some("ма ма ма".into()),
+        };
+        let choose = Exercise::ChooseWord {
+            stage: Some(ExerciseStage::Word),
+            prompt: "w".into(),
+            options: vec!["ма".into(), "па".into()],
+            answer: "ма".into(),
+        };
+        assert_eq!(syllable.map_key(), choose.map_key());
+        assert_eq!(syllable.map_key().as_deref(), Some("ма"));
+    }
+
+    #[test]
+    fn speech_map_normalize_merges_legacy_keys() {
+        let mut map = SpeechMap::default();
+        map.items.insert(
+            "ма ма ма".into(),
+            WordStat {
+                correct: 1,
+                attempts: 2,
+            },
+        );
+        map.items.insert(
+            "ма".into(),
+            WordStat {
+                correct: 1,
+                attempts: 1,
+            },
+        );
+        map.normalize_keys();
+        let s = map.items.get("ма").unwrap();
+        assert_eq!(s.correct, 2);
+        assert_eq!(s.attempts, 3);
+        assert!(!map.items.contains_key("ма ма ма"));
+    }
+
+    #[test]
+    fn pack_speech_entries_stage_order() {
+        let pack = ExercisePack {
+            title: "t".into(),
+            exercises: vec![
+                Exercise::ReadAloud {
+                    stage: Some(ExerciseStage::Phrase),
+                    prompt: "p".into(),
+                    text: "доброе утро".into(),
+                    speak: None,
+                },
+                Exercise::ReadAloud {
+                    stage: Some(ExerciseStage::Syllable),
+                    prompt: "s".into(),
+                    text: "МА".into(),
+                    speak: Some("ма ма ма".into()),
+                },
+                Exercise::ChooseWord {
+                    stage: Some(ExerciseStage::Word),
+                    prompt: "w".into(),
+                    options: vec!["чай".into(), "стол".into()],
+                    answer: "чай".into(),
+                },
+            ],
+        };
+        let entries = pack_speech_entries(&pack, &SpeechMap::default());
+        let stages: Vec<_> = entries.iter().map(|e| e.stage).collect();
+        assert_eq!(
+            stages,
+            vec![
+                ExerciseStage::Syllable,
+                ExerciseStage::Word,
+                ExerciseStage::Phrase
+            ]
+        );
+        assert_eq!(entries[0].label, "МА");
     }
 
     #[test]

@@ -334,6 +334,32 @@ impl UiApp {
             ui.add_space(20.0);
 
             let entries = self.engine.speech_map_entries();
+            let weak_n = entries
+                .iter()
+                .filter(|e| e.rating == SpeechRating::Weak)
+                .count();
+            let almost_n = entries
+                .iter()
+                .filter(|e| e.rating == SpeechRating::Almost)
+                .count();
+            let good_n = entries
+                .iter()
+                .filter(|e| e.rating == SpeechRating::Good)
+                .count();
+            let unknown_n = entries
+                .iter()
+                .filter(|e| e.rating == SpeechRating::Unknown)
+                .count();
+            if !entries.is_empty() {
+                ui.label(
+                    RichText::new(format!(
+                        "Нужна практика: {weak_n} · почти: {almost_n} · получается: {good_n} · ещё нет: {unknown_n}"
+                    ))
+                    .font(FontId::proportional(16.0))
+                    .color(Color32::from_rgb(60, 80, 100)),
+                );
+                ui.add_space(12.0);
+            }
             if entries.is_empty() {
                 ui.label(
                     RichText::new("В этом наборе пока нет заданий.")
@@ -343,39 +369,39 @@ impl UiApp {
             } else {
                 let mut current_stage: Option<ExerciseStage> = None;
                 for entry in &entries {
-                if current_stage != Some(entry.stage) {
-                    current_stage = Some(entry.stage);
-                    ui.add_space(12.0);
+                    if current_stage != Some(entry.stage) {
+                        current_stage = Some(entry.stage);
+                        ui.add_space(12.0);
+                        ui.label(
+                            RichText::new(entry.stage.label_ru())
+                                .font(FontId::proportional(22.0))
+                                .strong()
+                                .color(Color32::from_rgb(40, 70, 100)),
+                        );
+                        ui.add_space(8.0);
+                    }
+                    let color = match entry.rating {
+                        SpeechRating::Good => Color32::from_rgb(40, 130, 70),
+                        SpeechRating::Almost => Color32::from_rgb(180, 130, 30),
+                        SpeechRating::Weak => Color32::from_rgb(180, 60, 50),
+                        SpeechRating::Unknown => Color32::from_rgb(120, 120, 130),
+                    };
+                    let detail = if entry.attempts > 0 {
+                        format!(
+                            "{} — {}/{}",
+                            entry.rating.label_ru(),
+                            entry.correct,
+                            entry.attempts
+                        )
+                    } else {
+                        entry.rating.label_ru().to_string()
+                    };
                     ui.label(
-                        RichText::new(entry.stage.label_ru())
-                            .font(FontId::proportional(22.0))
-                            .strong()
-                            .color(Color32::from_rgb(40, 70, 100)),
+                        RichText::new(format!("{} · {}", entry.label, detail))
+                            .font(FontId::proportional(18.0))
+                            .color(color),
                     );
-                    ui.add_space(8.0);
-                }
-                let color = match entry.rating {
-                    SpeechRating::Good => Color32::from_rgb(40, 130, 70),
-                    SpeechRating::Almost => Color32::from_rgb(180, 130, 30),
-                    SpeechRating::Weak => Color32::from_rgb(180, 60, 50),
-                    SpeechRating::Unknown => Color32::from_rgb(120, 120, 130),
-                };
-                let detail = if entry.attempts > 0 {
-                    format!(
-                        "{} — {}/{}",
-                        entry.rating.label_ru(),
-                        entry.correct,
-                        entry.attempts
-                    )
-                } else {
-                    entry.rating.label_ru().to_string()
-                };
-                ui.label(
-                    RichText::new(format!("{} · {}", entry.label, detail))
-                        .font(FontId::proportional(18.0))
-                        .color(color),
-                );
-                ui.add_space(4.0);
+                    ui.add_space(4.0);
                 }
             }
 
@@ -403,13 +429,18 @@ impl UiApp {
             );
             ui.add_space(12.0);
             ui.label(
-                RichText::new("Сохранён. Занятие пойдёт с этой ступени.")
+                RichText::new("Сохранён. Занятие пойдёт с этой ступени.\nКарта произнесения тоже обновлена.")
                     .font(FontId::proportional(18.0))
                     .color(Color32::DARK_GRAY),
             );
             ui.add_space(36.0);
             if big_button(ui, "Начать занятие", Color32::from_rgb(40, 110, 180)).clicked() {
                 self.engine.handle(Command::StartSession);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Карта произнесения", Color32::from_rgb(100, 80, 150)).clicked()
+            {
+                self.engine.handle(Command::OpenSpeechMap);
             }
             ui.add_space(12.0);
             if big_button(ui, "Выбрать другой", Color32::from_rgb(90, 100, 120)).clicked() {
@@ -1025,6 +1056,11 @@ impl UiApp {
             ui.add_space(40.0);
             if big_button(ui, "На главный экран", Color32::from_rgb(40, 110, 180)).clicked() {
                 self.engine.handle(Command::GoHome);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Карта произнесения", Color32::from_rgb(100, 80, 150)).clicked()
+            {
+                self.engine.handle(Command::OpenSpeechMap);
             }
             ui.add_space(12.0);
             if big_button(ui, "Ещё раз", Color32::from_rgb(40, 130, 90)).clicked() {

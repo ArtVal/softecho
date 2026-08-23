@@ -282,8 +282,14 @@ impl Engine {
             &self.progress.speech_map,
         );
         if exercises.is_empty() {
+            self.load_error = Some(
+                "В этом наборе нет заданий с выбранного уровня. Выберите другой уровень или набор."
+                    .into(),
+            );
+            self.screen = Screen::Home;
             return;
         }
+        self.load_error = None;
         let mut session = SessionState {
             exercises,
             index: 0,
@@ -306,8 +312,13 @@ impl Engine {
         const PER_STAGE: usize = 2;
         let exercises = build_diagnosis_set(&self.pack.exercises, PER_STAGE);
         if exercises.is_empty() {
+            self.load_error = Some(
+                "В этом наборе нет заданий для диагностики. Выберите другой набор.".into(),
+            );
+            self.screen = Screen::Home;
             return;
         }
+        self.load_error = None;
         let mut session = SessionState {
             exercises,
             index: 0,
@@ -1211,6 +1222,16 @@ mod tests {
         assert!(matches!(eng.screen(), Screen::Home));
         assert!(eng.session().is_none());
         assert!(!eng.please_wait());
+    }
+
+    #[test]
+    fn open_speech_map_and_leave() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::OpenSpeechMap);
+        assert!(matches!(eng.screen(), Screen::SpeechMap));
+        assert!(!eng.speech_map_entries().is_empty());
+        eng.handle(Command::LeaveSpeechMap);
+        assert!(matches!(eng.screen(), Screen::Home));
     }
 
     #[test]

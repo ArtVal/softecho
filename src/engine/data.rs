@@ -156,7 +156,9 @@ pub fn load_progress() -> Progress {
     let Ok(bytes) = fs::read(&path) else {
         return Progress::default();
     };
-    serde_json::from_slice(&bytes).unwrap_or_default()
+    let mut progress: Progress = serde_json::from_slice(&bytes).unwrap_or_default();
+    progress.speech_map.normalize_keys();
+    progress
 }
 
 pub fn save_progress(progress: &Progress) -> Result<(), String> {
