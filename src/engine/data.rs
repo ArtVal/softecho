@@ -56,6 +56,11 @@ fn validate_pack(pack: &ExercisePack) -> Result<(), String> {
     Ok(())
 }
 
+/// Каталог данных приложения (прогресс, диктофон, модель Vosk).
+pub fn user_data_dir() -> Result<PathBuf, String> {
+    data_dir()
+}
+
 fn data_dir() -> Result<PathBuf, String> {
     let dirs = ProjectDirs::from("app", "SoftEcho", "SoftEcho")
         .ok_or_else(|| "Не удалось определить каталог данных".to_string())?;

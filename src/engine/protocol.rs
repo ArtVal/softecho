@@ -15,6 +15,7 @@ pub enum Screen {
         expected: Option<String>,
     },
     Dictaphone,
+    Settings,
     Result {
         correct: u32,
         total: u32,
@@ -28,6 +29,9 @@ pub enum Command {
     GoHome,
     StartSession,
     OpenDictaphone,
+    OpenSettings,
+    LeaveSettings,
+    StartModelDownload,
     AgainSession,
     AdvanceAfterFeedback,
     Submit(UserAnswer),
@@ -44,6 +48,19 @@ pub enum Command {
     ClearPickedWords,
     /// Сбросить «собрать фразу» (перемешать пул заново).
     ResetBuildPhrase,
+}
+
+/// Состояние загрузки модели Vosk (экран «Настройки»).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ModelDownloadState {
+    #[default]
+    Idle,
+    Working {
+        label: String,
+        percent: Option<u8>,
+    },
+    Succeeded,
+    Failed(String),
 }
 
 /// Результат `Engine::tick` — подсказки для UI (локально) / таймеров (сеть).

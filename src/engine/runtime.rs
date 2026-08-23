@@ -6,12 +6,13 @@ use super::asr::{
 };
 use super::data::{
     append_dictaphone_text, load_progress, load_starter_pack, new_dictaphone_path,
-    save_dictaphone_text, save_progress, vosk_model_dir,
+    save_dictaphone_text, save_progress, user_data_dir, vosk_model_dir,
 };
 use super::exercise::{
     check_answer, speech_matches, CheckResult, Exercise, ExercisePack, Progress, UserAnswer,
 };
-use super::protocol::{Command, Screen, TickResult};
+use super::protocol::{Command, ModelDownloadState, Screen, TickResult};
+use super::vosk_download::{spawn_model_download, DownloadMsg};
 
 use rand::seq::SliceRandom;
 use std::path::PathBuf;
@@ -89,6 +90,9 @@ pub struct Engine {
     /// Vosk разгребает буфер — показать «подождите».
     please_wait: bool,
     dictaphone: DictaphoneState,
+    model_download: ModelDownloadState,
+    model_download_rx: Option<Receiver<DownloadMsg>>,
+    model_download_note: Option<String>,
 }
 
 impl Engine {
@@ -124,6 +128,9 @@ impl Engine {
             listen_live: Arc::new(Mutex::new(String::new())),
             please_wait: false,
             dictaphone: DictaphoneState::default(),
+            model_download: ModelDownloadState::default(),
+            model_download_rx: None,
+            model_download_note: None,
         }
     }
 
@@ -131,6 +138,90 @@ impl Engine {
     #[cfg(test)]
     fn new_logic_only() -> Self {
         Self::create(None)
+    }
+
+    fn reload_recognizer(&mut self) {
+        self.abort_listen();
+        let model = vosk_model_dir();
+        if let Ok(mut r) = self.recognizer.lock() {
+            *r = create_recognizer(model.as_deref());
+        }
+    }
+
+    fn start_model_download(&mut self) {
+        if self.model_download_rx.is_some() {
+            return;
+        }
+        if matches!(self.asr_status(), AsrStatus::Disabled) {
+            return;
+        }
+        if matches!(self.asr_status(), AsrStatus::Ready) {
+            self.model_download_note = Some("Модель уже установлена.".into());
+            return;
+        }
+
+        let dest = match user_data_dir() {
+            Ok(p) => p,
+            Err(e) => {
+                self.model_download = ModelDownloadState::Failed(e);
+                return;
+            }
+        };
+
+        let (tx, rx) = mpsc::channel();
+        self.model_download_rx = Some(rx);
+        self.model_download = ModelDownloadState::Working {
+            label: "Подготовка…".into(),
+            percent: None,
+        };
+        self.model_download_note = None;
+        spawn_model_download(dest, tx);
+    }
+
+    fn poll_model_download(&mut self, tick: &mut TickResult) {
+        let Some(rx) = self.model_download_rx.as_ref() else {
+            return;
+        };
+        let mut messages = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            messages.push(msg);
+        }
+        for msg in messages {
+            match msg {
+                DownloadMsg::Phase(label) => {
+                    let percent = match &self.model_download {
+                        ModelDownloadState::Working { percent, .. } => *percent,
+                        _ => None,
+                    };
+                    self.model_download = ModelDownloadState::Working { label, percent };
+                    tick.want_repaint = true;
+                }
+                DownloadMsg::Percent(p) => {
+                    let label = match &self.model_download {
+                        ModelDownloadState::Working { label, .. } => label.clone(),
+                        _ => "Скачиваю…".into(),
+                    };
+                    self.model_download = ModelDownloadState::Working {
+                        label,
+                        percent: Some(p),
+                    };
+                    tick.want_repaint = true;
+                }
+                DownloadMsg::Done => {
+                    self.model_download_rx = None;
+                    self.reload_recognizer();
+                    self.model_download = ModelDownloadState::Succeeded;
+                    self.model_download_note =
+                        Some("Модель установлена. Голос готов.".into());
+                    tick.want_repaint = true;
+                }
+                DownloadMsg::Err(e) => {
+                    self.model_download_rx = None;
+                    self.model_download = ModelDownloadState::Failed(e);
+                    tick.want_repaint = true;
+                }
+            }
+        }
     }
 
     fn persist_progress(&mut self) {
@@ -419,6 +510,7 @@ impl Engine {
 
     pub fn tick(&mut self) -> TickResult {
         let mut tick = TickResult::default();
+        self.poll_model_download(&mut tick);
         if self.listen_rx.is_some() {
             self.sync_live_text();
         }
@@ -565,6 +657,19 @@ impl Engine {
                 self.dictaphone = DictaphoneState::default();
                 self.screen = Screen::Dictaphone;
             }
+            Command::OpenSettings => {
+                self.abort_listen();
+                self.session = None;
+                self.screen = Screen::Settings;
+            }
+            Command::LeaveSettings => {
+                self.screen = Screen::Home;
+                if matches!(self.model_download, ModelDownloadState::Succeeded) {
+                    self.model_download = ModelDownloadState::Idle;
+                }
+                self.model_download_note = None;
+            }
+            Command::StartModelDownload => self.start_model_download(),
             Command::AgainSession => {
                 self.abort_listen();
                 self.start_session();
@@ -647,6 +752,25 @@ impl Engine {
             Err(_) => AsrStatus::Ready,
         }
     }
+
+    pub fn model_download(&self) -> &ModelDownloadState {
+        &self.model_download
+    }
+
+    pub fn model_download_note(&self) -> Option<&str> {
+        self.model_download_note.as_deref()
+    }
+
+    pub fn user_data_dir_display(&self) -> Option<String> {
+        user_data_dir()
+            .ok()
+            .map(|p| p.display().to_string())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_download_rx(&mut self, rx: Receiver<DownloadMsg>) {
+        self.model_download_rx = Some(rx);
+    }
 }
 
 impl SessionState {
@@ -674,7 +798,7 @@ impl SessionState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::protocol::Screen;
+    use crate::engine::protocol::{ModelDownloadState, Screen};
 
     #[test]
     fn start_session_opens_exercise() {
@@ -782,6 +906,90 @@ mod tests {
         assert!(matches!(eng.screen(), Screen::Dictaphone));
         eng.handle(Command::LeaveDictaphone);
         assert!(matches!(eng.screen(), Screen::Home));
+    }
+
+    #[test]
+    fn settings_screen_from_home() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::OpenSettings);
+        assert!(matches!(eng.screen(), Screen::Settings));
+        eng.handle(Command::LeaveSettings);
+        assert!(matches!(eng.screen(), Screen::Home));
+        assert!(eng.model_download_note().is_none());
+    }
+
+    #[test]
+    #[cfg(not(feature = "asr"))]
+    fn start_model_download_noop_without_asr() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::StartModelDownload);
+        assert!(matches!(eng.model_download(), ModelDownloadState::Idle));
+    }
+
+    #[test]
+    #[cfg(feature = "asr")]
+    fn start_model_download_begins_when_model_missing() {
+        let tmp = std::env::temp_dir().join(format!("softecho-data-{}", std::process::id()));
+        std::env::set_var("XDG_DATA_HOME", &tmp);
+        let mut eng = Engine::new_logic_only();
+        assert!(matches!(eng.asr_status(), AsrStatus::ModelMissing));
+        eng.handle(Command::StartModelDownload);
+        assert!(matches!(
+            eng.model_download(),
+            ModelDownloadState::Working { .. }
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn poll_download_done_sets_succeeded() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(DownloadMsg::Done).unwrap();
+        drop(tx);
+        let mut eng = Engine::new_logic_only();
+        eng.test_download_rx(rx);
+        let tick = eng.tick();
+        assert!(tick.want_repaint);
+        assert!(matches!(
+            eng.model_download(),
+            ModelDownloadState::Succeeded
+        ));
+        assert_eq!(
+            eng.model_download_note(),
+            Some("Модель установлена. Голос готов.")
+        );
+    }
+
+    #[test]
+    fn poll_download_err_sets_failed() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(DownloadMsg::Err("сеть".into())).unwrap();
+        drop(tx);
+        let mut eng = Engine::new_logic_only();
+        eng.test_download_rx(rx);
+        eng.tick();
+        assert!(matches!(
+            eng.model_download(),
+            ModelDownloadState::Failed(e) if e == "сеть"
+        ));
+    }
+
+    #[test]
+    fn poll_download_percent_updates_progress() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(DownloadMsg::Phase("Скачиваю…".into())).unwrap();
+        tx.send(DownloadMsg::Percent(42)).unwrap();
+        drop(tx);
+        let mut eng = Engine::new_logic_only();
+        eng.test_download_rx(rx);
+        eng.tick();
+        assert!(matches!(
+            eng.model_download(),
+            ModelDownloadState::Working {
+                label,
+                percent: Some(42)
+            } if label == "Скачиваю…"
+        ));
     }
 
     #[test]

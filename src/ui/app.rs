@@ -1,7 +1,7 @@
 //! Клиентский UI (egui). Общается с движком только через Command / геттеры / tick.
 
 use crate::engine::{
-    AsrStatus, CheckResult, Command, Engine, Exercise, Screen, UserAnswer,
+    AsrStatus, CheckResult, Command, Engine, Exercise, ModelDownloadState, Screen, UserAnswer,
 };
 use crate::ui::theme::apply_theme;
 use crate::ui::widgets::{big_button, str_byte_tail};
@@ -41,6 +41,7 @@ impl eframe::App for UiApp {
                     expected,
                 } => self.ui_feedback(ui, result, heard, expected),
                 Screen::Dictaphone => self.ui_dictaphone(ui),
+                Screen::Settings => self.ui_settings(ui),
                 Screen::Result { correct, total } => self.ui_result(ui, correct, total),
             }
         });
@@ -115,6 +116,10 @@ impl UiApp {
                 self.engine.handle(Command::StartSession);
             }
             ui.add_space(12.0);
+            if big_button(ui, "Настройки", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenSettings);
+            }
+            ui.add_space(12.0);
             let dictaphone_ok = matches!(self.engine.asr_status(), AsrStatus::Ready);
             if dictaphone_ok {
                 if big_button(ui, "Диктофон", Color32::from_rgb(140, 60, 100)).clicked() {
@@ -126,6 +131,124 @@ impl UiApp {
                         .font(FontId::proportional(16.0))
                         .color(Color32::DARK_GRAY),
                 );
+            }
+        });
+    }
+
+    fn ui_settings(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            ui.add_space(24.0);
+            ui.label(
+                RichText::new("Настройки")
+                    .font(FontId::proportional(36.0))
+                    .strong(),
+            );
+            ui.add_space(16.0);
+
+            match self.engine.asr_status() {
+                AsrStatus::Ready => ui.label(
+                    RichText::new("Голос: готов (Vosk)")
+                        .font(FontId::proportional(20.0))
+                        .color(Color32::from_rgb(30, 120, 60)),
+                ),
+                AsrStatus::ModelMissing => ui.label(
+                    RichText::new("Голос: модель не найдена")
+                        .font(FontId::proportional(20.0))
+                        .color(Color32::from_rgb(150, 90, 30)),
+                ),
+                AsrStatus::Disabled => ui.label(
+                    RichText::new("Голос: выключен в этой сборке")
+                        .font(FontId::proportional(20.0))
+                        .color(Color32::DARK_GRAY),
+                ),
+                AsrStatus::Error(e) => ui.label(
+                    RichText::new(format!("Голос: {e}"))
+                        .font(FontId::proportional(20.0))
+                        .color(Color32::from_rgb(160, 60, 40)),
+                ),
+            };
+
+            if let Some(dir) = self.engine.user_data_dir_display() {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!("Данные: {dir}"))
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::DARK_GRAY),
+                );
+            }
+
+            ui.add_space(20.0);
+            match self.engine.model_download() {
+                ModelDownloadState::Idle | ModelDownloadState::Succeeded => {
+                    let can_download = !matches!(
+                        self.engine.asr_status(),
+                        AsrStatus::Disabled | AsrStatus::Ready
+                    );
+                    if can_download {
+                        ui.label(
+                            RichText::new(
+                                "Скачать русскую модель Vosk (~45 МБ). Нужен интернет один раз.",
+                            )
+                            .font(FontId::proportional(18.0))
+                            .color(Color32::DARK_GRAY),
+                        );
+                        ui.add_space(12.0);
+                        if big_button(
+                            ui,
+                            "Скачать модель",
+                            Color32::from_rgb(40, 110, 180),
+                        )
+                        .clicked()
+                        {
+                            self.engine.handle(Command::StartModelDownload);
+                        }
+                    } else if matches!(self.engine.asr_status(), AsrStatus::Ready) {
+                        ui.label(
+                            RichText::new("Модель уже на месте — перезапуск не нужен.")
+                                .font(FontId::proportional(18.0))
+                                .color(Color32::DARK_GRAY),
+                        );
+                    }
+                }
+                ModelDownloadState::Working { label, percent } => {
+                    ui.label(
+                        RichText::new(label)
+                            .font(FontId::proportional(20.0))
+                            .strong(),
+                    );
+                    if let Some(p) = percent {
+                        ui.add_space(8.0);
+                        ui.add(
+                            egui::ProgressBar::new(f32::from(*p) / 100.0)
+                                .text(format!("{p}%"))
+                                .desired_width(320.0),
+                        );
+                    } else {
+                        ui.add_space(8.0);
+                        ui.spinner();
+                    }
+                }
+                ModelDownloadState::Failed(err) => {
+                    ui.colored_label(Color32::from_rgb(160, 60, 40), err);
+                    ui.add_space(12.0);
+                    if big_button(ui, "Повторить", Color32::from_rgb(40, 110, 180)).clicked() {
+                        self.engine.handle(Command::StartModelDownload);
+                    }
+                }
+            }
+
+            if let Some(note) = self.engine.model_download_note() {
+                ui.add_space(12.0);
+                ui.label(
+                    RichText::new(note)
+                        .font(FontId::proportional(18.0))
+                        .color(Color32::from_rgb(30, 120, 60)),
+                );
+            }
+
+            ui.add_space(28.0);
+            if big_button(ui, "На главную", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::LeaveSettings);
             }
         });
     }
