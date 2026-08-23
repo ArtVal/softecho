@@ -29,6 +29,18 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         id: "greetings",
         bytes: include_bytes!("../../assets/exercises/greetings.json"),
     },
+    EmbeddedPack {
+        id: "family",
+        bytes: include_bytes!("../../assets/exercises/family.json"),
+    },
+    EmbeddedPack {
+        id: "body",
+        bytes: include_bytes!("../../assets/exercises/body.json"),
+    },
+    EmbeddedPack {
+        id: "food",
+        bytes: include_bytes!("../../assets/exercises/food.json"),
+    },
 ];
 
 /// Краткое описание встроенного набора (для экрана выбора).
@@ -217,7 +229,7 @@ mod tests {
             assert_eq!(pack.title, entry.title);
             assert!(!pack.exercises.is_empty());
         }
-        assert!(list_builtin_packs().len() >= 4);
+        assert!(list_builtin_packs().len() >= 7);
     }
 
     #[test]

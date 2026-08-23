@@ -1,0 +1,76 @@
+{
+  "title": "Тело",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "РУ",
+      "speak": "ру ру"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "НО",
+      "speak": "но но"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "рука"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "нога"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "голова"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "глаз"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Чем смотрим?",
+      "options": ["глаз", "ухо", "стол", "чай"],
+      "answer": "глаз"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Чем дышим?",
+      "options": ["нос", "рука", "окно", "ложка"],
+      "answer": "нос"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["У", "меня", "болит", "голова"],
+      "answer": "У меня болит голова"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Поднимите руку"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Откройте рот"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "title": "Еда",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "СУ",
+      "speak": "су су"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ЕМ",
+      "speak": "ем ем"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "суп"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "хлеб"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "молоко"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "яблоко"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что пьют утром?",
+      "options": ["чай", "стол", "дверь", "ключ"],
+      "answer": "чай"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что едят ложкой?",
+      "options": ["суп", "окно", "книга", "лампа"],
+      "answer": "суп"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["Я", "хочу", "есть"],
+      "answer": "Я хочу есть"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Я хочу пить"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Вкусный суп"
+    }
+  ]
+}

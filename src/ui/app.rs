@@ -5,7 +5,7 @@ use crate::engine::{
     UserAnswer,
 };
 use crate::ui::theme::apply_theme;
-use crate::ui::widgets::{big_button, screen_scroll, str_byte_tail};
+use crate::ui::widgets::{big_button, footer_buttons, screen_scroll, str_byte_tail};
 
 use eframe::egui::{self, Color32, FontId, RichText};
 
@@ -749,7 +749,7 @@ impl UiApp {
                             self.engine.handle(Command::StopDictaphone);
                         }
                     } else {
-                        ui.horizontal(|ui| {
+                        footer_buttons(ui, |ui| {
                             let has_text = !self.engine.dictaphone().transcript.is_empty();
                             if has_text
                                 && big_button(ui, "Сохранить txt", Color32::from_rgb(40, 110, 90))
@@ -757,7 +757,11 @@ impl UiApp {
                             {
                                 self.engine.handle(Command::SaveDictaphone);
                             }
-                            ui.add_space(12.0);
+                            if ui.available_width() >= 640.0 {
+                                ui.add_space(12.0);
+                            } else {
+                                ui.add_space(8.0);
+                            }
                             let can_clear = has_text
                                 || !self.engine.dictaphone().live_text.is_empty()
                                 || self.engine.dictaphone().error.is_some()
@@ -768,7 +772,11 @@ impl UiApp {
                             {
                                 self.engine.handle(Command::ClearDictaphone);
                             }
-                            ui.add_space(12.0);
+                            if ui.available_width() >= 640.0 {
+                                ui.add_space(12.0);
+                            } else {
+                                ui.add_space(8.0);
+                            }
                             if big_button(ui, "Назад", Color32::from_rgb(90, 100, 110)).clicked() {
                                 self.engine.handle(Command::LeaveDictaphone);
                             }
@@ -782,36 +790,40 @@ impl UiApp {
             .id_salt("dictaphone_body")
             .auto_shrink([false, false])
             .show(ui, |ui| {
+                let compact = ui.available_width() < 520.0 || ui.available_height() < 520.0;
+                let title_size = if compact { 28.0 } else { 36.0 };
+                let body_size = if compact { 16.0 } else { 18.0 };
+                let text_size = if compact { 20.0 } else { 24.0 };
                 ui.vertical_centered(|ui| {
-                    ui.add_space(16.0);
+                    ui.add_space(if compact { 8.0 } else { 16.0 });
                     ui.label(
                         RichText::new("Долгий диктофон")
-                            .font(FontId::proportional(36.0))
+                            .font(FontId::proportional(title_size))
                             .strong(),
                     );
                     ui.add_space(8.0);
                     ui.label(
                         RichText::new(
-                            "Говорите сколько нужно — текст копится и пишется в .txt на диск. Стоп — когда закончите.",
+                            "Говорите сколько нужно — текст копится в .txt. Стоп — когда закончите.",
                         )
-                        .font(FontId::proportional(18.0))
+                        .font(FontId::proportional(body_size))
                         .color(Color32::DARK_GRAY),
                     );
-                    ui.add_space(20.0);
+                    ui.add_space(if compact { 12.0 } else { 20.0 });
 
                     if self.engine.dictaphone().listening {
                         ui.label(
-                            RichText::new("Идёт запись… (до 3 часов или Стоп)")
-                                .font(FontId::proportional(22.0))
+                            RichText::new("Идёт запись… (Стоп внизу)")
+                                .font(FontId::proportional(body_size + 2.0))
                                 .color(Color32::from_rgb(140, 60, 100)),
                         );
                         if self.engine.please_wait() {
                             ui.add_space(12.0);
                             ui.label(
                                 RichText::new(
-                                    "Подождите: распознаю накопленный звук. Говорить пока не нужно.",
+                                    "Подождите: распознаю звук. Говорить пока не нужно.",
                                 )
-                                .font(FontId::proportional(22.0))
+                                .font(FontId::proportional(body_size + 2.0))
                                 .strong()
                                 .color(Color32::from_rgb(150, 90, 30)),
                             );
@@ -851,25 +863,29 @@ impl UiApp {
                             .color(Color32::DARK_GRAY),
                         );
                         ui.add_space(8.0);
-                        let text_h = (ui.available_height() * 0.45).clamp(96.0, 280.0);
+                        let text_h = if compact {
+                            (ui.available_height() * 0.35).clamp(72.0, 160.0)
+                        } else {
+                            (ui.available_height() * 0.45).clamp(96.0, 280.0)
+                        };
                         egui::ScrollArea::vertical()
                             .id_salt("dictaphone_text")
                             .max_height(text_h)
                             .auto_shrink([false, false])
                             .stick_to_bottom(true)
                             .show(ui, |ui| {
-                                ui.set_min_width(ui.available_width().min(720.0));
+                                ui.set_min_width(ui.available_width());
                                 if truncated {
                                     ui.label(
                                         RichText::new("…")
-                                            .font(FontId::proportional(24.0))
+                                            .font(FontId::proportional(text_size))
                                             .color(Color32::DARK_GRAY),
                                     );
                                 }
                                 if !tr_tail.is_empty() {
                                     ui.label(
                                         RichText::new(tr_tail)
-                                            .font(FontId::proportional(24.0))
+                                            .font(FontId::proportional(text_size))
                                             .strong()
                                             .color(Color32::from_rgb(20, 40, 60)),
                                     );
@@ -877,13 +893,13 @@ impl UiApp {
                                 if !live.is_empty() {
                                     ui.label(
                                         RichText::new(live)
-                                            .font(FontId::proportional(24.0))
+                                            .font(FontId::proportional(text_size))
                                             .color(Color32::from_rgb(80, 50, 100)),
                                     );
                                 } else if tr_tail.is_empty() {
                                     ui.label(
                                         RichText::new("…")
-                                            .font(FontId::proportional(24.0))
+                                            .font(FontId::proportional(text_size))
                                             .strong()
                                             .color(Color32::from_rgb(20, 40, 60)),
                                     );

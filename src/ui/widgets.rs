@@ -14,10 +14,13 @@ pub fn str_byte_tail(s: &str, max_bytes: usize) -> &str {
 }
 
 pub fn big_button(ui: &mut egui::Ui, label: &str, fill: Color32) -> egui::Response {
+    let width = ui.available_width().clamp(200.0, 280.0);
+    let height = if ui.available_width() < 520.0 { 52.0 } else { 56.0 };
+    let font_size = if ui.available_width() < 520.0 { 20.0 } else { 24.0 };
     let text = RichText::new(label)
-        .font(FontId::proportional(24.0))
+        .font(FontId::proportional(font_size))
         .color(Color32::WHITE);
-    let desired = Vec2::new(280.0, 56.0);
+    let desired = Vec2::new(width, height);
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
     if ui.is_rect_visible(rect) {
         let bg = if response.hovered() {
@@ -31,11 +34,25 @@ pub fn big_button(ui: &mut egui::Ui, label: &str, fill: Color32) -> egui::Respon
             rect.center(),
             egui::Align2::CENTER_CENTER,
             text.text(),
-            FontId::proportional(24.0),
+            FontId::proportional(font_size),
             Color32::WHITE,
         );
     }
     response
+}
+
+/// Кнопки в нижней панели: на узком экране — столбиком.
+pub fn footer_buttons(ui: &mut egui::Ui, add_buttons: impl FnOnce(&mut egui::Ui)) {
+    if ui.available_width() < 640.0 {
+        ui.vertical_centered(|ui| add_buttons(ui));
+    } else {
+        ui.horizontal(|ui| {
+            ui.with_layout(
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| add_buttons(ui),
+            );
+        });
+    }
 }
 
 /// Прокрутка экрана целиком — на низком окне (Windows + панель задач) кнопки не уезжают «за край».

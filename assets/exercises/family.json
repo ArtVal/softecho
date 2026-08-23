@@ -1,0 +1,76 @@
+{
+  "title": "Семья",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "МА",
+      "speak": "ма ма"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ПА",
+      "speak": "па па"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "мама"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "папа"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "сын"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "дочь"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Кто мама для ребёнка?",
+      "options": ["мама", "стол", "окно", "чай"],
+      "answer": "мама"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Кто брат?",
+      "options": ["брат", "ложка", "дверь", "ключ"],
+      "answer": "брат"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["Я", "люблю", "маму"],
+      "answer": "Я люблю маму"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Моя семья"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Где мой папа"
+    }
+  ]
+}
