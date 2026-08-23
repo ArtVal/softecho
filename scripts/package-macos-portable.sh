@@ -93,7 +93,8 @@ SoftEcho — portable (macOS)
 
 Голос (ASR):
 - Рядом с бинарником: libvosk.dylib (Vosk 0.3.42 universal2)
-- Модель: папка vosk-model-small-ru-0.22 рядом с softecho
+- Модель: Настройки → «Скачать модель» (интернет один раз)
+  или папка vosk-model-small-ru-0.22 рядом с softecho
   https://alphacephei.com/vosk/models (vosk-model-small-ru-0.22)
   или ~/Library/Application Support/SoftEcho/SoftEcho/vosk-model-small-ru-0.22
 

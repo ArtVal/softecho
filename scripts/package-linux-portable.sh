@@ -84,7 +84,8 @@ SoftEcho — portable (Linux x86_64)
 
 Голос (ASR):
 - Рядом с бинарником: libvosk.so
-- Модель: папка vosk-model-small-ru-0.22 рядом с softecho
+- Модель: Настройки → «Скачать модель» (интернет один раз)
+  или папка vosk-model-small-ru-0.22 рядом с softecho
   https://alphacephei.com/vosk/models (vosk-model-small-ru-0.22)
   или ~/.local/share/softecho/vosk-model-small-ru-0.22
 

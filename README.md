@@ -1,106 +1,146 @@
-# SoftEcho (`softecho`)
+# SoftEcho
 
-Домашний десктоп-тренажёр речи после инсульта / афазии. Офлайн, с проверкой произнесения.
+**SoftEcho** (`softecho`) — домашний десктоп-тренажёр речи после инсульта и афазии.  
+Работает **офлайн**: упражнения, проверка произнесённого, прогресс на вашем компьютере.
+
+> Не заменяет занятия с логопедом. Для домашней практики между визитами.
+
+## Для кого
+
+- человек восстанавливает речь дома;
+- родственник помогает короткими занятиями;
+- слабый ПК, крупные кнопки, без облака после первой настройки.
 
 ## Платформы
 
-Кроссплатформенно через **egui / eframe**:
+| ОС | Сборка | Голос (Vosk) |
+|----|--------|--------------|
+| **Windows** 10/11 x86_64 | да | да |
+| **Linux** x86_64 | да | да |
+| **macOS** Apple Silicon | да | да (libvosk 0.3.42) |
 
-| ОС | Статус |
-|----|--------|
-| **Windows** 10/11 | поддерживается |
-| **Linux** (X11 / Wayland) | поддерживается |
-| **macOS** | поддерживается |
+Дискретная видеокарта не нужна.
 
-Дискретная видеокарта **не нужна** — хватает встроенной графики.
+## Скачать готовый бинарник
 
-## Запуск (фаза 1 — текст)
+Сборки лежат в **GitHub Actions** (не на странице Releases):
+
+1. [Actions](https://github.com/ArtVal/softecho/actions) → workflow **windows-portable** / **linux-portable** / **macos-portable**
+2. Успешный run → внизу **Artifacts**
+3. Скачать архив **text** (без голоса) или **asr** (с `libvosk`)
+
+| Артефакт | Содержимое |
+|----------|------------|
+| `…-text` | только упражнения, без микрофона |
+| `…-asr` | распознавание речи; **модель языка (~45 МБ) отдельно** |
+
+После распаковки asr-сборки: **Настройки → Скачать модель** (нужен интернет один раз) или положите папку `vosk-model-small-ru-0.22` рядом с exe / в каталог данных (см. ниже).
+
+## Быстрый старт (разработка)
 
 ```bash
+# Только текст
 cargo run --release
+
+# С голосом (Linux, один раз)
+./scripts/setup-asr.sh          # ALSA + libvosk + модель в assets/
+cargo run --release --features asr
 ```
 
-Бинарник: `target/release/softecho` (на Windows — `softecho.exe`).
+Бинарник: `target/release/softecho` (Windows: `softecho.exe`).
 
-### Зависимости для сборки UI
+### Зависимости для сборки
 
-- **Linux:** пакеты для окна/Wayland/X11 (на Fedora часто уже есть).
-- **Windows:** [MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) + Rust.
-- **macOS:** Xcode Command Line Tools + Rust.
+- **Linux:** Wayland/X11, для ASR — `alsa-lib-devel`
+- **Windows:** [MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) + Rust
+- **macOS:** Xcode Command Line Tools + Rust
 
-## Архитектура кода
+## Первый запуск (asr-сборка)
+
+1. Запустите `softecho`.
+2. На главном экране: **Настройки**.
+3. **Скачать модель** (~45 МБ, Hugging Face → каталог данных).
+4. После загрузки голос включается **без перезапуска** («Голос: готов»).
+
+Альтернатива вручную:
+
+- модель [vosk-model-small-ru-0.22](https://alphacephei.com/vosk/models);
+- каталоги поиска: рядом с exe → `assets/vosk/` → данные приложения.
+
+**Данные приложения** (прогресс, диктофон, скачанная модель):
+
+| ОС | Путь |
+|----|------|
+| Linux | `~/.local/share/softecho/` |
+| Windows | `%APPDATA%\SoftEcho\SoftEcho\` |
+| macOS | `~/Library/Application Support/SoftEcho/SoftEcho/` |
+
+Прогресс **не** хранится в git — только локально у пользователя.
+
+## Что умеет
+
+- **Занятие:** выбор слова, сборка фразы, «прочитать вслух»
+- **Голос:** кнопка «Сказать», сверка с эталоном, мягкий допуск ошибок ASR
+- **Диктофон:** длинная запись, текст в `.txt`, буфер 120 с + «подождите»
+- **Настройки:** скачивание модели Vosk из приложения
+- **Прогресс:** число занятий и верных ответов между запусками
+
+## Голос (Vosk) — для сборки
+
+Нативные библиотеки (не в git):
+
+| ОС | Скрипт | Файл |
+|----|--------|------|
+| Linux | `./scripts/fetch-vosk-linux.sh` | `native/vosk/libvosk.so` |
+| Windows | `./scripts/fetch-vosk-windows.sh` | `native/vosk/libvosk.dll` |
+| macOS | `./scripts/fetch-vosk-macos.sh` | `native/vosk/libvosk.dylib` (0.3.42) |
+
+Полная подготовка на Fedora: `./scripts/setup-asr.sh`.
+
+Без `--features asr` или без модели — текстовый режим и самопроверка.
+
+## Portable-сборки
+
+| Платформа | CI workflow | Локально |
+|-----------|-------------|----------|
+| Windows | `windows-portable` | `./scripts/package-windows-portable.sh` |
+| Linux | `linux-portable` | `./scripts/package-linux-portable.sh` |
+| macOS | `macos-portable` | `./scripts/package-macos-portable.sh` |
+
+С голосом: `fetch-vosk-*.sh`, затем `package-*-portable.sh --asr`.  
+Модель в zip: `INCLUDE_MODEL=1 ./scripts/package-*-portable.sh --asr`.
+
+Артефакты в `dist/`:
+
+- `softecho-windows-x86_64-{text,asr}.zip`
+- `softecho-linux-x86_64-{text,asr}.tar.gz`
+- `softecho-macos-aarch64-{text,asr}.tar.gz`
+
+## Архитектура
 
 ```
-src/main.rs          — вход
-src/engine/          — движок (логика, ASR, данные) — будущий «сервер»
-  protocol.rs        — Command / Screen (граница с клиентом)
-  runtime.rs         — Engine::handle / tick
-  audio_pipe.rs      — буфер 120 с перед ASR
-  asr.rs, data.rs, exercise.rs
-src/ui/              — egui-клиент (рисует, шлёт Command)
+src/main.rs
+src/engine/           — логика (будущий «сервер»)
+  protocol.rs         — Command / Screen
+  runtime.rs          — Engine::handle / tick
+  vosk_download.rs    — загрузка модели из UI
+  asr.rs, audio_pipe.rs, data.rs, exercise.rs
+src/ui/               — egui-клиент
 ```
 
-UI не содержит бизнес-логики: только `engine.handle(Command::…)` и чтение состояния.
+UI шлёт только `Command`; состояние читает через геттеры и `tick`.
 
-План и условия (шина, сеть): см. [ROADMAP.md](ROADMAP.md).
+План развития: [ROADMAP.md](ROADMAP.md).
 
-Проверки:
+## Проверки
 
 ```bash
 cargo test
 cargo test --features asr
+cargo clippy -- -D warnings
 cargo clippy --features asr -- -D warnings
 ```
 
-## Portable-сборки
-
-Сборка без установщика (папка + архив):
-
-| Платформа | GitHub Actions | Локально |
-|-----------|----------------|----------|
-| **Windows** x86_64 | workflow **windows-portable** | `./scripts/package-windows-portable.sh` |
-| **Linux** x86_64 | workflow **linux-portable** | `./scripts/package-linux-portable.sh` |
-| **macOS** (Apple Silicon) | workflow **macos-portable** | `./scripts/package-macos-portable.sh` |
-
-С голосом: сначала fetch Vosk (`fetch-vosk-*.sh`), затем `package-*-portable.sh --asr`.  
-Модель в архив: `INCLUDE_MODEL=1 ./scripts/package-*-portable.sh --asr`.
-
-Артефакты в `dist/`:
-
-- Windows: `softecho-windows-x86_64-{text,asr}.zip`
-- Linux: `softecho-linux-x86_64-{text,asr}.tar.gz`
-- macOS: `softecho-macos-aarch64-{text,asr}.tar.gz`
-
-На macOS ASR использует **libvosk 0.3.42** (universal2) — официальных бинарников 0.3.45 под macOS нет.
-
-## Что умеет сейчас
-
-- Выбор слова, сборка фразы, «прочитать вслух»
-- Голос (Vosk): кнопка «Сказать», долгий диктофон, txt на диск
-- Буфер ASR 120 с и «подождите», пока разгребается очередь
-- Крупный UI, локальный прогресс
-- **Настройки → Скачать модель Vosk** (asr-сборка, один раз по интернету, без перезапуска)
-
-## Фаза 2 — голос (Vosk)
-
-```bash
-# Fedora: один раз
-./scripts/setup-asr.sh
-
-cargo run --release --features asr
-```
-
-Вручную:
-
-1. Linux: `alsa-lib-devel` / `libasound2-dev`.
-2. Модель [vosk-model-small-ru-0.22](https://alphacephei.com/vosk/models) в `assets/vosk/vosk-model-small-ru-0.22/` (или рядом с exe / в данных приложения).
-3. Нативная библиотека:
-   - Linux: `./scripts/fetch-vosk-linux.sh` → `native/vosk/libvosk.so`
-   - Windows: `./scripts/fetch-vosk-windows.sh`
-   - macOS: `./scripts/fetch-vosk-macos.sh` → `libvosk.dylib` (Vosk 0.3.42)
-
-Без модели или без `--features asr` — текстовый режим.
-
 ## Лицензия
 
-MIT (код). Модели Vosk — по лицензии Alphacephei.
+MIT (код). Модели и бинарники Vosk — [лицензия Alphacephei](https://alphacephei.com/vosk/).

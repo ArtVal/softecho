@@ -132,7 +132,8 @@ SoftEcho — portable (Windows x86_64)
 
 Голос (ASR):
 - Рядом с exe: libvosk.dll (и vosk.dll, если есть).
-- Модель: папка vosk-model-small-ru-0.22 рядом с exe
+- Модель: Настройки → «Скачать модель» (интернет один раз)
+  или папка vosk-model-small-ru-0.22 рядом с exe
   https://alphacephei.com/vosk/models (vosk-model-small-ru-0.22)
   или %APPDATA%\SoftEcho\SoftEcho\vosk-model-small-ru-0.22
 
