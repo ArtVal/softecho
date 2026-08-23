@@ -1,0 +1,66 @@
+# Portable-сборка под macOS (Apple Silicon), без установщика.
+name: macos-portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asr: false
+            suffix: text
+          - asr: true
+            suffix: asr
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-${{ matrix.suffix }}
+
+      - name: Fetch Vosk macOS natives
+        if: matrix.asr
+        run: ./scripts/fetch-vosk-macos.sh
+
+      - name: Build release (text)
+        if: ${{ !matrix.asr }}
+        run: cargo build --release
+
+      - name: Build release (asr)
+        if: matrix.asr
+        run: cargo build --release --features asr
+
+      - name: Package portable tar.gz
+        env:
+          SKIP_BUILD: "1"
+        run: |
+          set -euo pipefail
+          chmod +x scripts/package-macos-portable.sh
+          ARGS=
+          if [[ "${{ matrix.asr }}" == "true" ]]; then
+            ARGS=--asr
+          fi
+          ./scripts/package-macos-portable.sh $ARGS
+          ls -la dist/
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: softecho-macos-aarch64-${{ matrix.suffix }}
+          path: dist/softecho-macos-aarch64-*.tar.gz
+          if-no-files-found: error

@@ -1,5 +1,5 @@
 //! Линковка нативной libvosk при feature = "asr".
-//! Linux: libvosk.so · Windows: libvosk.dll (+ .lib для MSVC).
+//! Linux: libvosk.so · Windows: libvosk.dll · macOS: libvosk.dylib (Vosk 0.3.42).
 
 fn main() {
     if std::env::var_os("CARGO_FEATURE_ASR").is_none() {
@@ -13,6 +13,7 @@ fn main() {
     match target_os.as_str() {
         "linux" => setup_linux(&manifest, &lib_dir),
         "windows" => setup_windows(&manifest, &lib_dir),
+        "macos" => setup_macos(&manifest, &lib_dir),
         other => panic!(
             "ASR на '{other}' пока не настроен в build.rs. Нужны файлы в native/vosk/."
         ),
@@ -25,17 +26,39 @@ fn setup_linux(manifest: &std::path::Path, lib_dir: &std::path::Path) {
         panic!(
             "Не найден {}. Скачайте vosk-linux-x86_64 с \
              https://github.com/alphacep/vosk-api/releases (v0.3.45) \
-             и положите libvosk.so в native/vosk/. Или: ./scripts/setup-asr.sh",
+             и положите libvosk.so в native/vosk/. Или: ./scripts/fetch-vosk-linux.sh",
             lib.display()
         );
     }
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=vosk");
+    // portable: libvosk.so рядом с exe; dev: native/vosk/
+    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
     println!("cargo:rerun-if-changed={}", lib.display());
 
     copy_next_to_binary(manifest, &lib, "libvosk.so");
+}
+
+fn setup_macos(manifest: &std::path::Path, lib_dir: &std::path::Path) {
+    let lib = lib_dir.join("libvosk.dylib");
+    if !lib.exists() {
+        panic!(
+            "Не найден {}. Официальных бинарников Vosk 0.3.45 под macOS нет — \
+             скачайте vosk-osx-0.3.42 и положите libvosk.dylib в native/vosk/. \
+             Или: ./scripts/fetch-vosk-macos.sh",
+            lib.display()
+        );
+    }
+
+    println!("cargo:rustc-link-search=native={}", lib_dir.display());
+    println!("cargo:rustc-link-lib=dylib=vosk");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
+    println!("cargo:rerun-if-changed={}", lib.display());
+
+    copy_next_to_binary(manifest, &lib, "libvosk.dylib");
 }
 
 fn setup_windows(manifest: &std::path::Path, lib_dir: &std::path::Path) {

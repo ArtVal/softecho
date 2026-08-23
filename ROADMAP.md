@@ -16,6 +16,7 @@
 - [ ] Больше наборов упражнений (данные, не шина)
 - [ ] Упаковка релиза (Windows / Linux), путь к модели Vosk «из коробки»
 - [x] Portable Windows: скрипты + GitHub Actions (`windows-portable`), модель рядом с exe
+- [x] Portable Linux / macOS: скрипты + GitHub Actions (`linux-portable`, `macos-portable`)
 
 
 ## Клиент–сервер (когда понадобится удалённый движок)

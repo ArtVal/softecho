@@ -1,0 +1,81 @@
+# Portable-сборка под Linux (x86_64), без установщика.
+name: linux-portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asr: false
+            suffix: text
+          - asr: true
+            suffix: asr
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (UI + optional ALSA)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-${{ matrix.suffix }}
+
+      - name: Fetch Vosk Linux natives
+        if: matrix.asr
+        run: ./scripts/fetch-vosk-linux.sh
+
+      - name: Build release (text)
+        if: ${{ !matrix.asr }}
+        run: cargo build --release
+
+      - name: Build release (asr)
+        if: matrix.asr
+        run: cargo build --release --features asr
+
+      - name: Package portable tar.gz
+        env:
+          SKIP_BUILD: "1"
+        run: |
+          set -euo pipefail
+          chmod +x scripts/package-linux-portable.sh
+          ARGS=
+          if [[ "${{ matrix.asr }}" == "true" ]]; then
+            ARGS=--asr
+          fi
+          ./scripts/package-linux-portable.sh $ARGS
+          ls -la dist/
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: softecho-linux-x86_64-${{ matrix.suffix }}
+          path: dist/softecho-linux-x86_64-${{ matrix.suffix }}.tar.gz
+          if-no-files-found: error

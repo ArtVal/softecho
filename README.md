@@ -52,18 +52,26 @@ cargo test --features asr
 cargo clippy --features asr -- -D warnings
 ```
 
-## Portable Windows
+## Portable-сборки
 
-Сборка без установщика (папка + zip):
+Сборка без установщика (папка + архив):
 
-| Как | Команда / действие |
-|-----|-------------------|
-| **GitHub Actions** | Actions → workflow **windows-portable** → Run workflow → artifact |
-| **На Windows** | `./scripts/package-windows-portable.sh` |
-| **С голосом** | `./scripts/fetch-vosk-windows.sh` затем `./scripts/package-windows-portable.sh --asr` |
-| **Модель в zip** | `INCLUDE_MODEL=1 ./scripts/package-windows-portable.sh --asr` |
+| Платформа | GitHub Actions | Локально |
+|-----------|----------------|----------|
+| **Windows** x86_64 | workflow **windows-portable** | `./scripts/package-windows-portable.sh` |
+| **Linux** x86_64 | workflow **linux-portable** | `./scripts/package-linux-portable.sh` |
+| **macOS** (Apple Silicon) | workflow **macos-portable** | `./scripts/package-macos-portable.sh` |
 
-Артефакты: `dist/softecho-windows-x86_64-text.zip` и `…-asr.zip`.
+С голосом: сначала fetch Vosk (`fetch-vosk-*.sh`), затем `package-*-portable.sh --asr`.  
+Модель в архив: `INCLUDE_MODEL=1 ./scripts/package-*-portable.sh --asr`.
+
+Артефакты в `dist/`:
+
+- Windows: `softecho-windows-x86_64-{text,asr}.zip`
+- Linux: `softecho-linux-x86_64-{text,asr}.tar.gz`
+- macOS: `softecho-macos-aarch64-{text,asr}.tar.gz`
+
+На macOS ASR использует **libvosk 0.3.42** (universal2) — официальных бинарников 0.3.45 под macOS нет.
 
 ## Что умеет сейчас
 
@@ -85,7 +93,10 @@ cargo run --release --features asr
 
 1. Linux: `alsa-lib-devel` / `libasound2-dev`.
 2. Модель [vosk-model-small-ru-0.22](https://alphacephei.com/vosk/models) в `assets/vosk/vosk-model-small-ru-0.22/` (или рядом с exe / в данных приложения).
-3. Нативная библиотека: [vosk-linux-x86_64](https://github.com/alphacep/vosk-api/releases/tag/v0.3.45) → `native/vosk/libvosk.so` (Windows: `./scripts/fetch-vosk-windows.sh`).
+3. Нативная библиотека:
+   - Linux: `./scripts/fetch-vosk-linux.sh` → `native/vosk/libvosk.so`
+   - Windows: `./scripts/fetch-vosk-windows.sh`
+   - macOS: `./scripts/fetch-vosk-macos.sh` → `libvosk.dylib` (Vosk 0.3.42)
 
 Без модели или без `--features asr` — текстовый режим.
 
