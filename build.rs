@@ -1,7 +1,10 @@
 //! Линковка нативной libvosk при feature = "asr".
 //! Linux: libvosk.so · Windows: libvosk.dll · macOS: libvosk.dylib (Vosk 0.3.42).
+//! Windows: иконка и сведения о файле (Проводник) — не путать с подписью SmartScreen.
 
 fn main() {
+    embed_windows_info();
+
     if std::env::var_os("CARGO_FEATURE_ASR").is_none() {
         return;
     }
@@ -17,6 +20,46 @@ fn main() {
         other => panic!(
             "ASR на '{other}' пока не настроен в build.rs. Нужны файлы в native/vosk/."
         ),
+    }
+}
+
+/// Иконка и поля в свойствах exe. SmartScreen это не убирает — нужна подпись.
+fn embed_windows_info() {
+    if std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
+        return;
+    }
+
+    println!("cargo:rerun-if-changed=assets/softecho.ico");
+
+    let mut res = winresource::WindowsResource::new();
+    res.set("ProductName", "SoftEcho");
+    res.set("FileDescription", "SoftEcho — домашний тренажёр речи");
+    res.set("CompanyName", "SoftEcho");
+    res.set("LegalCopyright", "MIT");
+    res.set("OriginalFilename", "softecho.exe");
+    res.set("InternalName", "softecho");
+    res.set_language(0x0419); // ru-RU
+
+    let icon = std::path::Path::new("assets/softecho.ico");
+    if icon.exists() {
+        res.set_icon("assets/softecho.ico");
+    } else {
+        println!("cargo:warning=нет assets/softecho.ico — exe без иконки");
+    }
+
+    match res.compile() {
+        Ok(()) => {}
+        Err(err) if cfg!(windows) => panic!("не удалось вшить сведения Windows: {err}"),
+        Err(err) => println!("cargo:warning=сведения Windows пропущены: {err}"),
+    }
+
+    // Двойной щелчок по exe: GUI, без чёрной консоли. `cargo run` (debug) не трогаем.
+    // Один атрибут в main.rs на MSVC иногда не доходит до link.exe — дублируем флаг.
+    if std::env::var("PROFILE").ok().as_deref() == Some("release") {
+        match std::env::var("CARGO_CFG_TARGET_ENV").ok().as_deref() {
+            Some("msvc") => println!("cargo:rustc-link-arg=/SUBSYSTEM:WINDOWS"),
+            _ => println!("cargo:rustc-link-arg=-Wl,--subsystem,windows"),
+        }
     }
 }
 
