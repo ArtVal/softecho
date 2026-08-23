@@ -7,3 +7,4 @@ native/vosk/*.dll
 native/vosk/*.dylib
 native/vosk/*.lib
 mailmap.txt
+.idea/
