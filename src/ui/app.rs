@@ -5,7 +5,7 @@ use crate::engine::{
     SpeechRating, UserAnswer,
 };
 use crate::ui::theme::apply_theme;
-use crate::ui::widgets::{big_button, footer_buttons, screen_scroll, str_byte_tail};
+use crate::ui::widgets::{back_to_menu_button, big_button, footer_buttons, screen_scroll, str_byte_tail};
 
 use eframe::egui::{self, Color32, FontId, RichText};
 
@@ -29,6 +29,21 @@ impl eframe::App for UiApp {
             ctx.request_repaint();
         } else if let Some(after) = tick.repaint_after {
             ctx.request_repaint_after(after);
+        }
+
+        if !matches!(self.engine.screen(), Screen::Home) {
+            egui::TopBottomPanel::top("menu_back_bar")
+                .resizable(false)
+                .show_separator_line(true)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add_space(8.0);
+                        if back_to_menu_button(ui).clicked() {
+                            self.engine.handle(Command::GoHome);
+                        }
+                    });
+                    ui.add_space(4.0);
+                });
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -62,12 +77,7 @@ impl eframe::App for UiApp {
 impl UiApp {
     fn ui_home(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
-            // Второстепенное — сверху, не между основными действиями.
-            ui.add_space(8.0);
-            if big_button(ui, "Настройки", Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::OpenSettings);
-            }
-            ui.add_space(20.0);
+            ui.add_space(16.0);
             ui.label(
                 RichText::new("SoftEcho")
                     .font(FontId::proportional(42.0))
@@ -80,67 +90,42 @@ impl UiApp {
                     .font(FontId::proportional(22.0))
                     .color(Color32::from_rgb(60, 80, 100)),
             );
-            ui.add_space(24.0);
+            ui.add_space(20.0);
             ui.label(
                 RichText::new(format!("Набор: {}", self.engine.pack().title))
                     .font(FontId::proportional(20.0)),
             );
-            ui.add_space(8.0);
-            if big_button(ui, "Сменить набор", Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::OpenPackPick);
-            }
-            ui.add_space(8.0);
+            ui.add_space(6.0);
+            let level_text = match self.engine.level() {
+                Some(l) => format!("Уровень: {}", l.label_ru()),
+                None => "Уровень: не выбран".into(),
+            };
+            ui.label(
+                RichText::new(level_text)
+                    .font(FontId::proportional(18.0))
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
+            ui.add_space(4.0);
             ui.label(
                 RichText::new(format!(
-                    "Пройдено занятий: {} · верных ответов: {}/{}",
+                    "Занятий: {} · верно {}/{}",
                     self.engine.progress().sessions_completed,
                     self.engine.progress().total_correct,
                     self.engine.progress().total_answered
                 ))
-                .font(FontId::proportional(18.0))
+                .font(FontId::proportional(16.0))
                 .color(Color32::DARK_GRAY),
             );
-            ui.add_space(8.0);
-            let level_text = match self.engine.level() {
-                Some(l) => format!("Уровень: {}", l.label_ru()),
-                None => "Уровень не выбран — диагностика или вручную".into(),
-            };
-            ui.label(
-                RichText::new(level_text)
-                    .font(FontId::proportional(20.0))
-                    .strong()
-                    .color(Color32::from_rgb(40, 70, 100)),
-            );
-
-            ui.add_space(12.0);
-            ui.label(
-                RichText::new(
-                    "Слабые места возвращаются в занятии; «Не повторять» — пропуск до конца урока.",
-                )
-                .font(FontId::proportional(15.0))
-                .color(Color32::DARK_GRAY),
-            );
-            ui.add_space(12.0);
-            if big_button(
-                ui,
-                "Карта произнесения",
-                Color32::from_rgb(100, 80, 150),
-            )
-            .clicked()
-            {
-                self.engine.handle(Command::OpenSpeechMap);
-            }
-            ui.add_space(12.0);
-            self.ui_home_voice_status(ui);
 
             if let Some(err) = self.engine.load_error() {
+                ui.add_space(12.0);
                 ui.colored_label(Color32::RED, err);
             }
             if let Some(err) = self.engine.save_error() {
                 ui.colored_label(Color32::from_rgb(160, 60, 40), format!("Прогресс: {err}"));
             }
 
-            ui.add_space(28.0);
+            ui.add_space(32.0);
             if big_button(ui, "Начать занятие", Color32::from_rgb(40, 110, 180)).clicked() {
                 self.engine.handle(Command::StartSession);
             }
@@ -149,101 +134,22 @@ impl UiApp {
                 self.engine.handle(Command::StartDiagnosis);
             }
             ui.add_space(12.0);
-            if big_button(ui, "Выбрать уровень", Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::OpenLevelPick);
-            }
-            ui.add_space(12.0);
-            let dictaphone_ok = matches!(self.engine.asr_status(), AsrStatus::Ready);
-            if dictaphone_ok {
+            if matches!(self.engine.asr_status(), AsrStatus::Ready) {
                 if big_button(ui, "Диктофон", Color32::from_rgb(140, 60, 100)).clicked() {
                     self.engine.handle(Command::OpenDictaphone);
                 }
             } else {
                 ui.label(
-                    RichText::new("Диктофон доступен при сборке с голосом (Vosk)")
+                    RichText::new("Диктофон — в сборке с голосом (Vosk)")
                         .font(FontId::proportional(16.0))
                         .color(Color32::DARK_GRAY),
                 );
+            }
+            ui.add_space(24.0);
+            if big_button(ui, "Настройки", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenSettings);
             }
         });
-    }
-
-    fn ui_home_voice_status(&mut self, ui: &mut egui::Ui) {
-        match self.engine.asr_status() {
-            AsrStatus::Ready => {
-                ui.label(
-                    RichText::new("Голос: готов (Vosk)")
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::from_rgb(30, 120, 60)),
-                );
-            }
-            AsrStatus::ModelMissing => {
-                ui.label(
-                    RichText::new("Голос: нужна модель Vosk (~45 МБ, интернет один раз)")
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::from_rgb(150, 90, 30)),
-                );
-                ui.add_space(12.0);
-                match self.engine.model_download() {
-                    ModelDownloadState::Working { label, percent } => {
-                        ui.label(
-                            RichText::new(label)
-                                .font(FontId::proportional(18.0))
-                                .strong(),
-                        );
-                        if let Some(p) = percent {
-                            ui.add_space(8.0);
-                            ui.add(
-                                egui::ProgressBar::new(f32::from(*p) / 100.0)
-                                    .text(format!("{p}%"))
-                                    .desired_width(320.0),
-                            );
-                        } else {
-                            ui.add_space(8.0);
-                            ui.spinner();
-                        }
-                    }
-                    ModelDownloadState::Failed(err) => {
-                        ui.colored_label(Color32::from_rgb(160, 60, 40), err);
-                        ui.add_space(8.0);
-                        if big_button(ui, "Повторить загрузку", Color32::from_rgb(40, 110, 180))
-                            .clicked()
-                        {
-                            self.engine.handle(Command::StartModelDownload);
-                        }
-                    }
-                    _ => {
-                        if big_button(ui, "Скачать модель", Color32::from_rgb(40, 110, 180))
-                            .clicked()
-                        {
-                            self.engine.handle(Command::StartModelDownload);
-                        }
-                    }
-                }
-                if let Some(note) = self.engine.model_download_note() {
-                    ui.add_space(8.0);
-                    ui.label(
-                        RichText::new(note)
-                            .font(FontId::proportional(16.0))
-                            .color(Color32::from_rgb(30, 120, 60)),
-                    );
-                }
-            }
-            AsrStatus::Disabled => {
-                ui.label(
-                    RichText::new("Голос: выключен в сборке (текстовый режим)")
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::DARK_GRAY),
-                );
-            }
-            AsrStatus::Error(e) => {
-                ui.label(
-                    RichText::new(format!("Голос: {e}"))
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::from_rgb(160, 60, 40)),
-                );
-            }
-        }
     }
 
     fn ui_pack_pick(&mut self, ui: &mut egui::Ui) {
@@ -272,10 +178,6 @@ impl UiApp {
                     self.engine.handle(Command::SetPack(entry.id));
                 }
                 ui.add_space(12.0);
-            }
-            ui.add_space(12.0);
-            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::LeavePackPick);
             }
         });
     }
@@ -308,10 +210,6 @@ impl UiApp {
             if big_button(ui, "Экспресс-диагностика", Color32::from_rgb(40, 130, 90)).clicked()
             {
                 self.engine.handle(Command::StartDiagnosis);
-            }
-            ui.add_space(12.0);
-            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::LeaveLevelPick);
             }
         });
     }
@@ -412,11 +310,6 @@ impl UiApp {
                     ui.add_space(4.0);
                 }
             }
-
-            ui.add_space(24.0);
-            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::LeaveSpeechMap);
-            }
         });
     }
 
@@ -454,10 +347,6 @@ impl UiApp {
             if big_button(ui, "Выбрать другой", Color32::from_rgb(90, 100, 120)).clicked() {
                 self.engine.handle(Command::OpenLevelPick);
             }
-            ui.add_space(12.0);
-            if big_button(ui, "На главную", Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::GoHome);
-            }
         });
     }
 
@@ -470,6 +359,62 @@ impl UiApp {
                     .strong(),
             );
             ui.add_space(16.0);
+
+            ui.label(
+                RichText::new("Набор и уровень")
+                    .font(FontId::proportional(22.0))
+                    .strong()
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(format!("Набор: {}", self.engine.pack().title))
+                    .font(FontId::proportional(18.0)),
+            );
+            let level_text = match self.engine.level() {
+                Some(l) => format!("Уровень: {}", l.label_ru()),
+                None => "Уровень: не выбран".into(),
+            };
+            ui.label(
+                RichText::new(level_text)
+                    .font(FontId::proportional(18.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(12.0);
+            if big_button(ui, "Сменить набор", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenPackPick);
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Выбрать уровень", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenLevelPick);
+            }
+            ui.add_space(8.0);
+            if big_button(
+                ui,
+                "Карта произнесения",
+                Color32::from_rgb(100, 80, 150),
+            )
+            .clicked()
+            {
+                self.engine.handle(Command::OpenSpeechMap);
+            }
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(
+                    "Слабые места возвращаются в занятии; «Не повторять» — пропуск до конца урока.",
+                )
+                .font(FontId::proportional(15.0))
+                .color(Color32::DARK_GRAY),
+            );
+
+            ui.add_space(24.0);
+            ui.label(
+                RichText::new("Голос")
+                    .font(FontId::proportional(22.0))
+                    .strong()
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
+            ui.add_space(8.0);
 
             match self.engine.asr_status() {
                 AsrStatus::Ready => ui.label(
@@ -572,9 +517,12 @@ impl UiApp {
                 );
             }
 
-            ui.add_space(28.0);
-            if big_button(ui, "На главную", Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::LeaveSettings);
+            if let Some(err) = self.engine.save_error() {
+                ui.add_space(12.0);
+                ui.colored_label(
+                    Color32::from_rgb(160, 60, 40),
+                    format!("Прогресс: {err}"),
+                );
             }
         });
     }
@@ -895,10 +843,6 @@ impl UiApp {
                 if big_button(ui, "Не повторять", Color32::from_rgb(90, 100, 120)).clicked() {
                     self.engine.handle(Command::SkipRepeatAndAdvance);
                 }
-                ui.add_space(12.0);
-                if big_button(ui, "На главную", Color32::from_rgb(90, 100, 120)).clicked() {
-                    self.engine.handle(Command::GoHome);
-                }
             } else if big_button(ui, "Дальше", Color32::from_rgb(40, 110, 180)).clicked() {
                 self.engine.handle(Command::AdvanceAfterFeedback);
             }
@@ -1111,17 +1055,13 @@ impl UiApp {
                 );
             }
             ui.add_space(40.0);
-            if big_button(ui, "На главный экран", Color32::from_rgb(40, 110, 180)).clicked() {
-                self.engine.handle(Command::GoHome);
+            if big_button(ui, "Ещё раз", Color32::from_rgb(40, 130, 90)).clicked() {
+                self.engine.handle(Command::AgainSession);
             }
             ui.add_space(12.0);
             if big_button(ui, "Карта произнесения", Color32::from_rgb(100, 80, 150)).clicked()
             {
                 self.engine.handle(Command::OpenSpeechMap);
-            }
-            ui.add_space(12.0);
-            if big_button(ui, "Ещё раз", Color32::from_rgb(40, 130, 90)).clicked() {
-                self.engine.handle(Command::AgainSession);
             }
         });
     }
