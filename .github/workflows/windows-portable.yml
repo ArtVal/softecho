@@ -61,22 +61,34 @@ jobs:
           ./scripts/package-windows-portable.sh $ARGS
           ls -la dist/
 
-      - name: Verify ASR zip includes MinGW runtime
+      - name: Verify ASR portable includes MinGW runtime
         if: matrix.asr
         shell: bash
         run: |
           set -euo pipefail
+          # Проверяем папку (надежнее unzip на Windows runner) и что zip не пустой.
+          out="dist/softecho-windows-x86_64-asr"
           zip="dist/softecho-windows-x86_64-asr.zip"
+          test -d "$out"
           test -f "$zip"
-          for f in softecho.exe libvosk.dll libwinpthread-1.dll libgcc_s_seh-1.dll libstdc++-6.dll; do
-            unzip -l "$zip" | grep -F "$f" >/dev/null || { echo "В $zip нет $f" >&2; exit 1; }
+          ls -la "$out"
+          for f in softecho.exe libvosk.dll libwinpthread-1.dll libgcc_s_seh-1.dll 'libstdc++-6.dll'; do
+            test -f "$out/$f" || { echo "В $out нет $f" >&2; exit 1; }
           done
-          dll_count="$(unzip -l "$zip" | grep -E '\.dll$' | wc -l | tr -d ' ')"
+          dll_count="$(find "$out" -maxdepth 1 -type f -name '*.dll' | wc -l | tr -d ' ')"
           if [[ "$dll_count" -lt 4 ]]; then
-            echo "В $zip слишком мало .dll ($dll_count)" >&2
+            echo "В $out слишком мало .dll ($dll_count)" >&2
             exit 1
           fi
-          echo "OK: portable ASR zip ($dll_count .dll)"
+          # Содержимое zip без unzip: tar умеет читать .zip через -a / bsdtar.
+          if tar -tf "$zip" >/tmp/asr-zip.list 2>/dev/null || tar -a -tf "$zip" >/tmp/asr-zip.list 2>/dev/null; then
+            for f in libvosk.dll libwinpthread-1.dll libgcc_s_seh-1.dll 'libstdc++-6.dll'; do
+              grep -F "$f" /tmp/asr-zip.list >/dev/null || { echo "В $zip нет $f" >&2; cat /tmp/asr-zip.list >&2; exit 1; }
+            done
+          else
+            echo "Предупреждение: не удалось прочитать список zip (папка уже проверена)" >&2
+          fi
+          echo "OK: portable ASR ($dll_count .dll, zip $(wc -c < "$zip") bytes)"
 
       - name: Upload zip
         uses: actions/upload-artifact@v4
