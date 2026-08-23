@@ -4,6 +4,8 @@ name: windows-portable
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -58,6 +60,18 @@ jobs:
           fi
           ./scripts/package-windows-portable.sh $ARGS
           ls -la dist/
+
+      - name: Verify ASR zip includes MinGW runtime
+        if: matrix.asr
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip="dist/softecho-windows-x86_64-asr.zip"
+          test -f "$zip"
+          for f in softecho.exe libvosk.dll libwinpthread-1.dll libgcc_s_seh-1.dll libstdc++-6.dll; do
+            unzip -l "$zip" | grep -F "$f" >/dev/null || { echo "В $zip нет $f" >&2; exit 1; }
+          done
+          echo "OK: все runtime DLL в zip"
 
       - name: Upload zip
         uses: actions/upload-artifact@v4
