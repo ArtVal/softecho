@@ -14,6 +14,7 @@ use super::exercise::{
     pack_speech_entries, CheckResult, Exercise, ExercisePack, ExerciseStage, Progress, SpeechMapEntry,
     UserAnswer,
 };
+use std::collections::{HashMap, HashSet};
 use super::protocol::{Command, ModelDownloadState, Screen, TickResult};
 use super::vosk_download::{spawn_model_download, DownloadMsg};
 
@@ -67,6 +68,14 @@ enum SessionKind {
     Diagnosis,
 }
 
+/// Сколько раз за занятие можно вернуть одно и то же задание в очередь.
+const MAX_REQUEUE_PER_KEY: u32 = 3;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct PendingAdvance {
+    result: CheckResult,
+}
+
 pub struct SessionState {
     pub exercises: Vec<Exercise>,
     pub index: usize,
@@ -83,6 +92,16 @@ pub struct SessionState {
     kind: SessionKind,
     /// Итоги по заданиям диагностики (ступень, верно?).
     outcomes: Vec<(ExerciseStage, bool)>,
+    /// Горячий приоритет повтора в этом занятии (растёт с каждой неудачей).
+    session_boost: HashMap<String, u32>,
+    /// Ключи, которые пользователь попросил не возвращать в этой сессии.
+    skip_repeat: HashSet<String>,
+    /// Сколько раз уже вернули задание в очередь за сессию.
+    requeue_count: HashMap<String, u32>,
+    /// Длина очереди при старте (без последующих возвратов).
+    initial_exercise_count: u32,
+    /// Результат последнего ответа — обрабатывается при «Дальше».
+    pending_advance: Option<PendingAdvance>,
 }
 
 pub struct Engine {
@@ -302,7 +321,13 @@ impl Engine {
             live_text: String::new(),
             kind: SessionKind::Practice,
             outcomes: vec![],
+            session_boost: HashMap::new(),
+            skip_repeat: HashSet::new(),
+            requeue_count: HashMap::new(),
+            initial_exercise_count: 0,
+            pending_advance: None,
         };
+        session.initial_exercise_count = session.exercises.len() as u32;
         session.prepare_current();
         self.session = Some(session);
         self.screen = Screen::Exercise;
@@ -331,7 +356,13 @@ impl Engine {
             live_text: String::new(),
             kind: SessionKind::Diagnosis,
             outcomes: vec![],
+            session_boost: HashMap::new(),
+            skip_repeat: HashSet::new(),
+            requeue_count: HashMap::new(),
+            initial_exercise_count: 0,
+            pending_advance: None,
         };
+        session.initial_exercise_count = session.exercises.len() as u32;
         session.prepare_current();
         self.session = Some(session);
         self.screen = Screen::Exercise;
@@ -380,12 +411,16 @@ impl Engine {
         let result = check_answer(&ex, &answer);
         if result == CheckResult::Correct {
             session.correct += 1;
+            if let Some(key) = ex.map_key() {
+                session.session_boost.remove(&key);
+            }
         }
         if session.kind == SessionKind::Diagnosis {
             session
                 .outcomes
                 .push((ex.stage(), result == CheckResult::Correct));
         }
+        session.pending_advance = Some(PendingAdvance { result });
         let heard = match &answer {
             UserAnswer::ReadDone { heard, .. } => heard.clone(),
             _ => None,
@@ -406,36 +441,103 @@ impl Engine {
         };
     }
 
-    fn advance_after_feedback(&mut self) {
+    fn advance_after_feedback(&mut self, skip_repeat: bool) {
         self.listen_rx = None;
         self.listen_target = None;
         self.listen_purpose = None;
         let Some(session) = self.session.as_mut() else {
             return;
         };
+        let Some(pending) = session.pending_advance.take() else {
+            session.index += 1;
+            if session.index >= session.exercises.len() {
+                self.finish_session();
+            } else {
+                session.prepare_current();
+                self.screen = Screen::Exercise;
+            }
+            return;
+        };
+        let Some(ex) = session.exercises.get(session.index).cloned() else {
+            return;
+        };
+
+        if session.kind == SessionKind::Practice && pending.result == CheckResult::Incorrect {
+            if skip_repeat {
+                if let Some(key) = ex.map_key() {
+                    session.skip_repeat.insert(key);
+                }
+            } else {
+                Self::maybe_requeue_failed(session, ex);
+            }
+        }
+
         session.index += 1;
         if session.index >= session.exercises.len() {
-            match session.kind {
-                SessionKind::Diagnosis => {
-                    let level = infer_level(&session.outcomes);
-                    self.progress.set_level(level);
-                    self.persist_progress();
-                    self.session = None;
-                    self.screen = Screen::DiagnosisResult { level };
-                }
-                SessionKind::Practice => {
-                    let correct = session.correct;
-                    let total = session.exercises.len() as u32;
-                    self.progress.record_session(correct, total);
-                    self.persist_progress();
-                    self.session = None;
-                    self.screen = Screen::Result { correct, total };
-                }
-            }
+            self.finish_session();
         } else {
             session.prepare_current();
             self.screen = Screen::Exercise;
         }
+    }
+
+    fn finish_session(&mut self) {
+        let Some(session) = self.session.take() else {
+            return;
+        };
+        match session.kind {
+            SessionKind::Diagnosis => {
+                let level = infer_level(&session.outcomes);
+                self.progress.set_level(level);
+                self.persist_progress();
+                self.session = None;
+                self.screen = Screen::DiagnosisResult { level };
+            }
+            SessionKind::Practice => {
+                let correct = session.correct;
+                let total = session.exercises.len() as u32;
+                let unique = session.initial_exercise_count;
+                self.progress.record_session(correct, total);
+                self.persist_progress();
+                self.session = None;
+                self.screen = Screen::Result {
+                    correct,
+                    total,
+                    unique,
+                };
+            }
+        }
+    }
+
+    /// Вернуть неудачное задание в хвост очереди — чем больше неудач, тем раньше.
+    fn maybe_requeue_failed(session: &mut SessionState, ex: Exercise) {
+        let Some(key) = ex.map_key() else {
+            return;
+        };
+        if session.skip_repeat.contains(&key) {
+            return;
+        }
+        let times = session.requeue_count.entry(key.clone()).or_insert(0);
+        if *times >= MAX_REQUEUE_PER_KEY {
+            return;
+        }
+        *times += 1;
+        let boost = session.session_boost.entry(key).or_insert(0);
+        *boost += 1;
+        let boost = *boost;
+
+        let mut insert_at = session.index + 1;
+        while insert_at < session.exercises.len() {
+            let other_boost = session.exercises[insert_at]
+                .map_key()
+                .and_then(|k| session.session_boost.get(&k).copied())
+                .unwrap_or(0);
+            if other_boost < boost {
+                break;
+            }
+            insert_at += 1;
+        }
+        session.exercises.insert(insert_at, ex);
     }
 
     fn try_listen(&mut self) {
@@ -841,7 +943,8 @@ impl Engine {
                 self.abort_listen();
                 self.start_session();
             }
-            Command::AdvanceAfterFeedback => self.advance_after_feedback(),
+            Command::AdvanceAfterFeedback => self.advance_after_feedback(false),
+            Command::SkipRepeatAndAdvance => self.advance_after_feedback(true),
             Command::Submit(answer) => self.submit(answer),
             Command::ListenExercise => self.try_listen(),
             Command::ListenDictaphone => self.try_listen_dictaphone(),
@@ -928,6 +1031,47 @@ impl Engine {
         self.session
             .as_ref()
             .is_some_and(|s| s.kind == SessionKind::Diagnosis)
+    }
+
+    pub fn session_is_practice(&self) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|s| s.kind == SessionKind::Practice)
+    }
+
+    /// Сколько ещё раз можно вернуть текущее задание в очередь (0 — лимит или «не повторять»).
+    pub fn feedback_requeues_left(&self) -> Option<u32> {
+        let session = self.session.as_ref()?;
+        if session.kind != SessionKind::Practice {
+            return None;
+        }
+        let ex = session.exercises.get(session.index)?;
+        let key = ex.map_key()?;
+        if session.skip_repeat.contains(&key) {
+            return Some(0);
+        }
+        let used = session.requeue_count.get(&key).copied().unwrap_or(0);
+        Some(MAX_REQUEUE_PER_KEY.saturating_sub(used))
+    }
+
+    /// Подсказка на экране упражнения: это повтор слабого места.
+    pub fn current_exercise_is_practice_repeat(&self) -> bool {
+        let Some(session) = self.session.as_ref() else {
+            return false;
+        };
+        if session.kind != SessionKind::Practice {
+            return false;
+        }
+        let Some(ex) = session.exercises.get(session.index) else {
+            return false;
+        };
+        let Some(key) = ex.map_key() else {
+            return false;
+        };
+        session
+            .session_boost
+            .get(&key)
+            .is_some_and(|b| *b > 0)
     }
 
     pub fn level(&self) -> Option<ExerciseStage> {
@@ -1232,6 +1376,204 @@ mod tests {
         assert!(!eng.speech_map_entries().is_empty());
         eng.handle(Command::LeaveSpeechMap);
         assert!(matches!(eng.screen(), Screen::Home));
+    }
+
+    fn tiny_test_pack() -> ExercisePack {
+        ExercisePack {
+            title: "test".into(),
+            exercises: vec![
+                Exercise::ChooseWord {
+                    stage: Some(ExerciseStage::Word),
+                    prompt: "q".into(),
+                    options: vec!["дом".into(), "чай".into()],
+                    answer: "дом".into(),
+                },
+                Exercise::ChooseWord {
+                    stage: Some(ExerciseStage::Word),
+                    prompt: "q2".into(),
+                    options: vec!["чай".into(), "стол".into()],
+                    answer: "чай".into(),
+                },
+            ],
+        }
+    }
+
+    fn wrong_answer_for(ex: &Exercise) -> UserAnswer {
+        match ex {
+            Exercise::ChooseWord { options, answer, .. } => {
+                let wrong = options
+                    .iter()
+                    .find(|o| *o != answer)
+                    .cloned()
+                    .unwrap_or_else(|| "__нет__".into());
+                UserAnswer::Choice(wrong)
+            }
+            Exercise::BuildPhrase { answer, .. } => {
+                let mut parts: Vec<String> = answer.split_whitespace().map(str::to_string).collect();
+                if parts.len() >= 2 {
+                    parts.swap(0, 1);
+                }
+                UserAnswer::Phrase(parts)
+            }
+            Exercise::ReadAloud { .. } => UserAnswer::ReadDone {
+                matched: false,
+                heard: None,
+            },
+        }
+    }
+
+    #[test]
+    fn incorrect_practice_requeues_on_advance() {
+        let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Word);
+        eng.pack = tiny_test_pack();
+        eng.handle(Command::StartSession);
+        let len = eng.session().unwrap().exercises.len();
+        let ex = eng.current_exercise().cloned().unwrap();
+        eng.handle(Command::Submit(wrong_answer_for(&ex)));
+        eng.handle(Command::AdvanceAfterFeedback);
+        assert_eq!(eng.session().unwrap().exercises.len(), len + 1);
+        assert!(matches!(eng.screen(), Screen::Exercise));
+    }
+
+    #[test]
+    fn skip_repeat_does_not_requeue() {
+        let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Word);
+        eng.pack = tiny_test_pack();
+        eng.handle(Command::StartSession);
+        let len = eng.session().unwrap().exercises.len();
+        let ex = eng.current_exercise().cloned().unwrap();
+        eng.handle(Command::Submit(wrong_answer_for(&ex)));
+        eng.handle(Command::SkipRepeatAndAdvance);
+        assert_eq!(eng.session().unwrap().exercises.len(), len);
+    }
+
+    #[test]
+    fn requeue_capped_per_key() {
+        let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Word);
+        eng.pack = ExercisePack {
+            title: "one".into(),
+            exercises: vec![Exercise::ChooseWord {
+                stage: Some(ExerciseStage::Word),
+                prompt: "q".into(),
+                options: vec!["дом".into(), "чай".into()],
+                answer: "дом".into(),
+            }],
+        };
+        eng.handle(Command::StartSession);
+        let mut max_len = 1;
+        for _ in 0..6 {
+            if !matches!(eng.screen(), Screen::Exercise) {
+                break;
+            }
+            let ex = eng.current_exercise().cloned().unwrap();
+            eng.handle(Command::Submit(wrong_answer_for(&ex)));
+            eng.handle(Command::AdvanceAfterFeedback);
+            if let Some(s) = eng.session() {
+                max_len = max_len.max(s.exercises.len());
+            }
+        }
+        assert_eq!(max_len, 4);
+    }
+
+    #[test]
+    fn skip_repeat_blocks_later_requeue_same_key() {
+        let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Word);
+        eng.pack = ExercisePack {
+            title: "same-key".into(),
+            exercises: vec![
+                Exercise::ChooseWord {
+                    stage: Some(ExerciseStage::Word),
+                    prompt: "q1".into(),
+                    options: vec!["дом".into(), "чай".into()],
+                    answer: "дом".into(),
+                },
+                Exercise::ChooseWord {
+                    stage: Some(ExerciseStage::Word),
+                    prompt: "q2".into(),
+                    options: vec!["дом".into(), "стол".into()],
+                    answer: "дом".into(),
+                },
+            ],
+        };
+        eng.handle(Command::StartSession);
+        let len = eng.session().unwrap().exercises.len();
+        let ex = eng.current_exercise().cloned().unwrap();
+        eng.handle(Command::Submit(wrong_answer_for(&ex)));
+        eng.handle(Command::SkipRepeatAndAdvance);
+        assert_eq!(eng.session().unwrap().exercises.len(), len);
+        assert!(matches!(eng.screen(), Screen::Exercise));
+        let ex2 = eng.current_exercise().cloned().unwrap();
+        eng.handle(Command::Submit(wrong_answer_for(&ex2)));
+        assert_eq!(eng.feedback_requeues_left(), Some(0));
+        let len_before = eng.session().unwrap().exercises.len();
+        eng.handle(Command::AdvanceAfterFeedback);
+        if let Some(s) = eng.session() {
+            assert_eq!(s.exercises.len(), len_before);
+        } else {
+            assert_eq!(len_before, len);
+            assert!(matches!(eng.screen(), Screen::Result { .. }));
+        }
+    }
+
+    #[test]
+    fn higher_session_boost_comes_earlier() {
+        let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Word);
+        // «дом» слабее в карте — стартует первым (без случайного порядка).
+        eng.progress.speech_map.record("дом", false);
+        eng.progress.speech_map.record("дом", false);
+        eng.pack = ExercisePack {
+            title: "two".into(),
+            exercises: vec![
+                Exercise::ChooseWord {
+                    stage: Some(ExerciseStage::Word),
+                    prompt: "a".into(),
+                    options: vec!["дом".into(), "чай".into()],
+                    answer: "дом".into(),
+                },
+                Exercise::ChooseWord {
+                    stage: Some(ExerciseStage::Word),
+                    prompt: "b".into(),
+                    options: vec!["чай".into(), "стол".into()],
+                    answer: "чай".into(),
+                },
+            ],
+        };
+        eng.handle(Command::StartSession);
+        let ex0 = eng.current_exercise().cloned().unwrap();
+        match &ex0 {
+            Exercise::ChooseWord { answer, .. } => assert_eq!(answer, "дом"),
+            _ => panic!("ожидали «дом» первым"),
+        }
+        eng.handle(Command::Submit(wrong_answer_for(&ex0)));
+        eng.handle(Command::AdvanceAfterFeedback);
+        let ex1 = eng.current_exercise().cloned().unwrap();
+        eng.handle(Command::Submit(wrong_answer_for(&ex1)));
+        eng.handle(Command::AdvanceAfterFeedback);
+        let ex2 = eng.current_exercise().cloned().unwrap();
+        eng.handle(Command::Submit(wrong_answer_for(&ex2)));
+        eng.handle(Command::AdvanceAfterFeedback);
+        let next = eng.current_exercise().cloned().unwrap();
+        match next {
+            Exercise::ChooseWord { answer, .. } => assert_eq!(answer, "дом"),
+            _ => panic!("ожидали повтор «дом»"),
+        }
+    }
+
+    #[test]
+    fn diagnosis_does_not_requeue() {
+        let mut eng = Engine::new_logic_only();
+        eng.pack = tiny_test_pack();
+        eng.handle(Command::StartDiagnosis);
+        let len = eng.session().unwrap().exercises.len();
+        let ex = eng.current_exercise().cloned().unwrap();
+        eng.handle(Command::Submit(wrong_answer_for(&ex)));
+        eng.handle(Command::AdvanceAfterFeedback);
+        assert_eq!(eng.session().unwrap().exercises.len(), len);
     }
 
     #[test]

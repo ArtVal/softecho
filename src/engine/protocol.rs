@@ -28,7 +28,10 @@ pub enum Screen {
     Settings,
     Result {
         correct: u32,
+        /// Все попытки, включая возвраты в очередь.
         total: u32,
+        /// Заданий в исходном плане занятия (без повторов).
+        unique: u32,
     },
 }
 
@@ -57,6 +60,8 @@ pub enum Command {
     StartModelDownload,
     AgainSession,
     AdvanceAfterFeedback,
+    /// Не возвращать это задание в очередь занятия (только практика).
+    SkipRepeatAndAdvance,
     Submit(UserAnswer),
     ListenExercise,
     ListenDictaphone,

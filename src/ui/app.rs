@@ -51,8 +51,8 @@ impl eframe::App for UiApp {
                 }
                 Screen::Dictaphone => self.ui_dictaphone(ui),
                 Screen::Settings => screen_scroll(ui, "settings", |ui| self.ui_settings(ui)),
-                Screen::Result { correct, total } => {
-                    screen_scroll(ui, "result", |ui| self.ui_result(ui, correct, total))
+                Screen::Result { correct, total, unique } => {
+                    screen_scroll(ui, "result", |ui| self.ui_result(ui, correct, total, unique))
                 }
             }
         });
@@ -112,6 +112,14 @@ impl UiApp {
                     .color(Color32::from_rgb(40, 70, 100)),
             );
 
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new(
+                    "Слабые места возвращаются в занятии; «Не повторять» — пропуск до конца урока.",
+                )
+                .font(FontId::proportional(15.0))
+                .color(Color32::DARK_GRAY),
+            );
             ui.add_space(12.0);
             if big_button(
                 ui,
@@ -600,6 +608,14 @@ impl UiApp {
                     .font(FontId::proportional(18.0))
                     .color(Color32::DARK_GRAY),
             );
+            if self.engine.current_exercise_is_practice_repeat() {
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("Повтор — нужна практика")
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::from_rgb(180, 100, 40)),
+                );
+            }
             ui.add_space(16.0);
         });
 
@@ -852,7 +868,34 @@ impl UiApp {
             }
 
             ui.add_space(40.0);
-            if big_button(ui, "Дальше", Color32::from_rgb(40, 110, 180)).clicked() {
+            if result == CheckResult::Incorrect && self.engine.session_is_practice() {
+                if let Some(left) = self.engine.feedback_requeues_left() {
+                    let hint = if left == 0 {
+                        "В этом занятии больше не вернём — лимит или «не повторять».".into()
+                    } else {
+                        format!(
+                            "Вернём позже — чем чаще ошибка, тем раньше. Ещё до {left} раз в этом занятии."
+                        )
+                    };
+                    ui.label(
+                        RichText::new(hint)
+                            .font(FontId::proportional(16.0))
+                            .color(Color32::DARK_GRAY),
+                    );
+                }
+                ui.add_space(16.0);
+                if big_button(ui, "Дальше", Color32::from_rgb(40, 110, 180)).clicked() {
+                    self.engine.handle(Command::AdvanceAfterFeedback);
+                }
+                ui.add_space(12.0);
+                if big_button(ui, "Не повторять", Color32::from_rgb(90, 100, 120)).clicked() {
+                    self.engine.handle(Command::SkipRepeatAndAdvance);
+                }
+                ui.add_space(12.0);
+                if big_button(ui, "На главную", Color32::from_rgb(90, 100, 120)).clicked() {
+                    self.engine.handle(Command::GoHome);
+                }
+            } else if big_button(ui, "Дальше", Color32::from_rgb(40, 110, 180)).clicked() {
                 self.engine.handle(Command::AdvanceAfterFeedback);
             }
         });
@@ -1033,7 +1076,7 @@ impl UiApp {
             });
     }
 
-    fn ui_result(&mut self, ui: &mut egui::Ui, correct: u32, total: u32) {
+    fn ui_result(&mut self, ui: &mut egui::Ui, correct: u32, total: u32, unique: u32) {
         ui.vertical_centered(|ui| {
             ui.add_space(50.0);
             ui.label(
@@ -1046,6 +1089,16 @@ impl UiApp {
                 RichText::new(format!("Верно: {correct} из {total}"))
                     .font(FontId::proportional(28.0)),
             );
+            if total > unique {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!(
+                        "Заданий в плане: {unique} · с повторами слабых: {total}"
+                    ))
+                    .font(FontId::proportional(16.0))
+                    .color(Color32::DARK_GRAY),
+                );
+            }
             if let Some(err) = self.engine.save_error() {
                 ui.add_space(12.0);
                 ui.colored_label(
