@@ -1,0 +1,97 @@
+{
+  "title": "Дом и быт",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ДОМ",
+      "speak": "дом дом"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "СУП",
+      "speak": "суп суп"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Где живут?",
+      "options": ["дом", "чай", "ручка", "окно"],
+      "answer": "дом"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что пьют?",
+      "options": ["вода", "стол", "дверь", "лампа"],
+      "answer": "вода"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Где спят?",
+      "options": ["кровать", "ложка", "ключ", "чашка"],
+      "answer": "кровать"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что на столе?",
+      "options": ["тарелка", "окно", "улица", "сапог"],
+      "answer": "тарелка"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "стол"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "окно"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "хлеб"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "чай"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["Я", "дома"],
+      "answer": "Я дома"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["Я", "хочу", "есть"],
+      "answer": "Я хочу есть"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Я пью чай"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Где моя тарелка"
+    }
+  ]
+}

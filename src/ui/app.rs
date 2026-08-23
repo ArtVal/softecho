@@ -35,6 +35,7 @@ impl eframe::App for UiApp {
             ui.add_space(8.0);
             match self.engine.screen().clone() {
                 Screen::Home => screen_scroll(ui, "home", |ui| self.ui_home(ui)),
+                Screen::PackPick => screen_scroll(ui, "pack", |ui| self.ui_pack_pick(ui)),
                 Screen::LevelPick => screen_scroll(ui, "level", |ui| self.ui_level_pick(ui)),
                 Screen::Exercise => screen_scroll(ui, "ex", |ui| self.ui_exercise(ui)),
                 Screen::Feedback {
@@ -81,6 +82,11 @@ impl UiApp {
                 RichText::new(format!("Набор: {}", self.engine.pack().title))
                     .font(FontId::proportional(20.0)),
             );
+            ui.add_space(8.0);
+            if big_button(ui, "Сменить набор", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenPackPick);
+            }
+            ui.add_space(8.0);
             ui.label(
                 RichText::new(format!(
                     "Пройдено занятий: {} · верных ответов: {}/{}",
@@ -158,6 +164,40 @@ impl UiApp {
                         .font(FontId::proportional(16.0))
                         .color(Color32::DARK_GRAY),
                 );
+            }
+        });
+    }
+
+    fn ui_pack_pick(&mut self, ui: &mut egui::Ui) {
+        let current = self.engine.pack_id().to_string();
+        ui.vertical_centered(|ui| {
+            ui.add_space(28.0);
+            ui.label(
+                RichText::new("Набор упражнений")
+                    .font(FontId::proportional(36.0))
+                    .strong(),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("Тема занятий. Уровень и прогресс сохраняются.")
+                    .font(FontId::proportional(18.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(24.0);
+            for entry in self.engine.pack_catalog() {
+                let label = if entry.id == current {
+                    format!("{} ✓", entry.title)
+                } else {
+                    entry.title.clone()
+                };
+                if big_button(ui, &label, Color32::from_rgb(40, 110, 180)).clicked() {
+                    self.engine.handle(Command::SetPack(entry.id));
+                }
+                ui.add_space(12.0);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::LeavePackPick);
             }
         });
     }

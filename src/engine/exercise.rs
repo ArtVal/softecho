@@ -284,6 +284,9 @@ pub struct Progress {
     /// Рабочий уровень (слоги / слова / фразы). Ставится диагностикой или вручную.
     #[serde(default)]
     pub level: Option<ExerciseStage>,
+    /// Выбранный набор упражнений (`starter`, `daily`, …).
+    #[serde(default)]
+    pub pack_id: Option<String>,
 }
 
 impl Progress {
@@ -295,6 +298,10 @@ impl Progress {
 
     pub fn set_level(&mut self, level: ExerciseStage) {
         self.level = Some(level);
+    }
+
+    pub fn set_pack(&mut self, pack_id: &str) {
+        self.pack_id = Some(pack_id.to_string());
     }
 }
 

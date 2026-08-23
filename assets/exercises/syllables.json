@@ -1,0 +1,113 @@
+{
+  "title": "Открытые слоги",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "МА",
+      "speak": "ма ма ма"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ПА",
+      "speak": "па па па"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "БА",
+      "speak": "ба ба ба"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ДА",
+      "speak": "да да да"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ТА",
+      "speak": "та та та"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "КА",
+      "speak": "ка ка ка"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "НА",
+      "speak": "на на на"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ЛА",
+      "speak": "ла ла ла"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "РА",
+      "speak": "ра ра ра"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "СА",
+      "speak": "са са са"
+    },
+    {
+      "type": "choose_word",
+      "stage": "syllable",
+      "prompt": "Какой слог: ПА?",
+      "options": ["па", "ба", "ма", "да"],
+      "answer": "па"
+    },
+    {
+      "type": "choose_word",
+      "stage": "syllable",
+      "prompt": "Какой слог: КА?",
+      "options": ["ка", "на", "та", "ра"],
+      "answer": "ка"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "мама"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "папа"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Ма ма"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Па па"
+    }
+  ]
+}

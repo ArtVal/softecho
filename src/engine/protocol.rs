@@ -8,6 +8,8 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub enum Screen {
     Home,
+    /// Выбор набора упражнений.
+    PackPick,
     /// Ручной выбор уровня (пропуск диагностики).
     LevelPick,
     Exercise,
@@ -37,6 +39,10 @@ pub enum Command {
     StartSession,
     /// Короткий прогон слог→слово→фраза, затем автоуровень.
     StartDiagnosis,
+    OpenPackPick,
+    LeavePackPick,
+    /// Сменить встроенный набор упражнений.
+    SetPack(String),
     OpenLevelPick,
     LeaveLevelPick,
     /// Ручная установка уровня (сохраняется локально).

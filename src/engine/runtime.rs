@@ -5,8 +5,9 @@ use super::asr::{
     create_recognizer, AsrStatus, ListenConfig, ListenEvent, SpeechRecognizer,
 };
 use super::data::{
-    append_dictaphone_text, load_progress, load_starter_pack, new_dictaphone_path,
-    save_dictaphone_text, save_progress, user_data_dir, vosk_model_dir,
+    append_dictaphone_text, list_builtin_packs, load_active_pack, load_pack, load_progress,
+    new_dictaphone_path, save_dictaphone_text, save_progress, user_data_dir, vosk_model_dir,
+    DEFAULT_PACK_ID, PackCatalogEntry,
 };
 use super::exercise::{
     build_diagnosis_set, check_answer, infer_level, order_session_for_level, speech_matches,
@@ -111,15 +112,19 @@ impl Engine {
     }
 
     fn create(model: Option<std::path::PathBuf>) -> Self {
-        let (pack, load_error) = match load_starter_pack() {
+        let progress = load_progress();
+        let (pack, load_error) = match load_active_pack(&progress) {
             Ok(p) => (p, None),
-            Err(e) => (
-                ExercisePack {
-                    title: "Пусто".into(),
-                    exercises: vec![],
-                },
-                Some(e),
-            ),
+            Err(e) => match load_pack(DEFAULT_PACK_ID) {
+                Ok(p) => (p, Some(e)),
+                Err(e2) => (
+                    ExercisePack {
+                        title: "Пусто".into(),
+                        exercises: vec![],
+                    },
+                    Some(format!("{e}; {e2}")),
+                ),
+            },
         };
 
         let recognizer = Arc::new(Mutex::new(create_recognizer(model.as_deref())));
@@ -127,7 +132,7 @@ impl Engine {
         Self {
             screen: Screen::Home,
             pack,
-            progress: load_progress(),
+            progress,
             session: None,
             load_error,
             save_error: None,
@@ -321,6 +326,20 @@ impl Engine {
         self.persist_progress();
         self.session = None;
         self.screen = Screen::Home;
+    }
+
+    fn set_pack(&mut self, pack_id: &str) {
+        match load_pack(pack_id) {
+            Ok(pack) => {
+                self.pack = pack;
+                self.progress.set_pack(pack_id);
+                self.persist_progress();
+                self.load_error = None;
+                self.session = None;
+                self.screen = Screen::Home;
+            }
+            Err(e) => self.load_error = Some(e),
+        }
     }
 
     pub fn current_exercise(&self) -> Option<&Exercise> {
@@ -749,6 +768,18 @@ impl Engine {
                 self.abort_listen();
                 self.start_diagnosis();
             }
+            Command::OpenPackPick => {
+                self.abort_listen();
+                self.session = None;
+                self.screen = Screen::PackPick;
+            }
+            Command::LeavePackPick => {
+                self.screen = Screen::Home;
+            }
+            Command::SetPack(id) => {
+                self.abort_listen();
+                self.set_pack(&id);
+            }
             Command::OpenLevelPick => {
                 self.abort_listen();
                 self.session = None;
@@ -829,6 +860,17 @@ impl Engine {
 
     pub fn pack(&self) -> &ExercisePack {
         &self.pack
+    }
+
+    pub fn pack_id(&self) -> &str {
+        self.progress
+            .pack_id
+            .as_deref()
+            .unwrap_or(DEFAULT_PACK_ID)
+    }
+
+    pub fn pack_catalog(&self) -> Vec<PackCatalogEntry> {
+        list_builtin_packs()
     }
 
     pub fn progress(&self) -> &Progress {
@@ -918,6 +960,15 @@ impl SessionState {
 mod tests {
     use super::*;
     use crate::engine::protocol::{ModelDownloadState, Screen};
+
+    #[test]
+    fn set_pack_manual() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::SetPack("daily".into()));
+        assert_eq!(eng.pack().title, "Дом и быт");
+        assert_eq!(eng.pack_id(), "daily");
+        assert!(matches!(eng.screen(), Screen::Home));
+    }
 
     #[test]
     fn start_session_without_level_opens_picker() {

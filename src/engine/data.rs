@@ -5,13 +5,73 @@ use directories::ProjectDirs;
 
 use super::exercise::{ExercisePack, Progress};
 
-const PACK_BYTES: &[u8] = include_bytes!("../../assets/exercises/starter.json");
+pub const DEFAULT_PACK_ID: &str = "starter";
 
-pub fn load_starter_pack() -> Result<ExercisePack, String> {
-    let pack: ExercisePack = serde_json::from_slice(PACK_BYTES)
-        .map_err(|e| format!("Не удалось разобрать упражнения: {e}"))?;
+struct EmbeddedPack {
+    id: &'static str,
+    bytes: &'static [u8],
+}
+
+const EMBEDDED_PACKS: &[EmbeddedPack] = &[
+    EmbeddedPack {
+        id: "starter",
+        bytes: include_bytes!("../../assets/exercises/starter.json"),
+    },
+    EmbeddedPack {
+        id: "syllables",
+        bytes: include_bytes!("../../assets/exercises/syllables.json"),
+    },
+    EmbeddedPack {
+        id: "daily",
+        bytes: include_bytes!("../../assets/exercises/daily.json"),
+    },
+    EmbeddedPack {
+        id: "greetings",
+        bytes: include_bytes!("../../assets/exercises/greetings.json"),
+    },
+];
+
+/// Краткое описание встроенного набора (для экрана выбора).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackCatalogEntry {
+    pub id: String,
+    pub title: String,
+}
+
+pub fn list_builtin_packs() -> Vec<PackCatalogEntry> {
+    EMBEDDED_PACKS
+        .iter()
+        .filter_map(|entry| {
+            load_pack_bytes(entry.id, entry.bytes)
+                .ok()
+                .map(|pack| PackCatalogEntry {
+                    id: entry.id.to_string(),
+                    title: pack.title,
+                })
+        })
+        .collect()
+}
+
+pub fn load_pack(id: &str) -> Result<ExercisePack, String> {
+    let Some(entry) = EMBEDDED_PACKS.iter().find(|p| p.id == id) else {
+        return Err(format!("Неизвестный набор «{id}»"));
+    };
+    load_pack_bytes(entry.id, entry.bytes)
+}
+
+fn load_pack_bytes(id: &str, bytes: &[u8]) -> Result<ExercisePack, String> {
+    let pack: ExercisePack = serde_json::from_slice(bytes)
+        .map_err(|e| format!("Не удалось разобрать набор «{id}»: {e}"))?;
     validate_pack(&pack)?;
     Ok(pack)
+}
+
+pub fn load_active_pack(progress: &Progress) -> Result<ExercisePack, String> {
+    let id = progress
+        .pack_id
+        .as_deref()
+        .unwrap_or(DEFAULT_PACK_ID);
+    load_pack(id)
 }
 
 fn validate_pack(pack: &ExercisePack) -> Result<(), String> {
@@ -99,7 +159,6 @@ pub fn new_dictaphone_path() -> Result<PathBuf, String> {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    // Простой штамп без chrono-зависимостей.
     let name = format!("dictaphone_{secs}.txt");
     Ok(dir.join(name))
 }
@@ -128,7 +187,6 @@ pub fn save_dictaphone_text(path: &std::path::Path, text: &str) -> Result<(), St
 pub fn vosk_model_dir() -> Option<PathBuf> {
     let mut candidates = Vec::new();
 
-    // Portable: папка с бинарником
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             candidates.push(dir.join("vosk-model-small-ru-0.22"));
@@ -153,10 +211,19 @@ mod tests {
     use super::super::exercise::ExerciseStage;
 
     #[test]
+    fn all_builtin_packs_load() {
+        for entry in list_builtin_packs() {
+            let pack = load_pack(&entry.id).expect("набор должен разбираться");
+            assert_eq!(pack.title, entry.title);
+            assert!(!pack.exercises.is_empty());
+        }
+        assert!(list_builtin_packs().len() >= 4);
+    }
+
+    #[test]
     fn starter_pack_loads_and_validates() {
-        let pack = load_starter_pack().expect("starter.json должен разбираться");
+        let pack = load_pack(DEFAULT_PACK_ID).expect("starter.json должен разбираться");
         assert_eq!(pack.title, "Слоги → слова → фразы");
-        assert!(!pack.exercises.is_empty());
         assert!(pack
             .exercises
             .iter()
@@ -169,6 +236,14 @@ mod tests {
             .exercises
             .iter()
             .any(|e| e.stage() == ExerciseStage::Phrase));
+    }
+
+    #[test]
+    fn load_active_pack_uses_progress_id() {
+        let mut p = Progress::default();
+        p.pack_id = Some("greetings".into());
+        let pack = load_active_pack(&p).unwrap();
+        assert_eq!(pack.title, "Приветствия");
     }
 
     #[test]

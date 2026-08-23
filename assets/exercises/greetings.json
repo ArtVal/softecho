@@ -1,0 +1,88 @@
+{
+  "title": "Приветствия",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ДА",
+      "speak": "да да да"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "НЕ",
+      "speak": "не не не"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "да"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "нет"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "привет"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "спасибо"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Как ответить «спасибо»?",
+      "options": ["пожалуйста", "стол", "окно", "чай"],
+      "answer": "пожалуйста"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["Доброе", "утро"],
+      "answer": "Доброе утро"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["Спасибо", "большое"],
+      "answer": "Спасибо большое"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Добрый день"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "До свидания"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Как дела"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Мне нужна помощь"
+    }
+  ]
+}
