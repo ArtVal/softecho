@@ -24,16 +24,19 @@ done
 TARGET="${CARGO_BUILD_TARGET:-}"
 HOST_OS="$(uname -s 2>/dev/null || echo unknown)"
 
+# GitHub Actions + Git Bash: нативная сборка лежит в target/release/,
+# а не в target/x86_64-pc-windows-msvc/release/ (даже если target установлен).
 pick_target() {
   if [[ -n "${CARGO_BUILD_TARGET:-}" ]]; then
     echo "$CARGO_BUILD_TARGET"
     return
   fi
   case "$HOST_OS" in
-    MINGW*|MSYS*|CYGWIN*)
+    MINGW*|MSYS*|CYGWIN*|Windows_NT*)
       echo ""
       ;;
     *)
+      # Кросс-сборка с Linux/macOS
       if rustup target list --installed 2>/dev/null | grep -qx 'x86_64-pc-windows-msvc'; then
         echo "x86_64-pc-windows-msvc"
       elif rustup target list --installed 2>/dev/null | grep -qx 'x86_64-pc-windows-gnu'; then
@@ -43,6 +46,15 @@ pick_target() {
       fi
       ;;
   esac
+}
+
+# Windows-путь для PowerShell (Git Bash даёт /d/a/... — Compress-Archive его не ест).
+to_win_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$1"
+  else
+    echo "$1"
+  fi
 }
 
 TARGET="$(pick_target)"
@@ -63,6 +75,12 @@ else
   BIN_DIR="$ROOT/target/release"
 fi
 EXE="$BIN_DIR/softecho.exe"
+
+# На Windows CI иногда бинарник в target/release, даже если pick_target ошибся.
+if [[ ! -f "$EXE" && -f "$ROOT/target/release/softecho.exe" ]]; then
+  BIN_DIR="$ROOT/target/release"
+  EXE="$BIN_DIR/softecho.exe"
+fi
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   echo "==> Сборка release (asr=$WITH_ASR, target=${TARGET:-host})"
@@ -143,14 +161,35 @@ EOF
 mkdir -p "$ROOT/dist"
 ZIP="$ROOT/dist/softecho-windows-x86_64-${NAME_SUFFIX}.zip"
 rm -f "$ZIP"
+ZIP_NAME="$(basename "$ZIP")"
+OUT_NAME="$(basename "$OUT")"
+
+zip_ok=0
 if command -v zip >/dev/null 2>&1; then
-  ( cd "$ROOT/dist" && zip -r -q "$(basename "$ZIP")" "$(basename "$OUT")" )
-elif command -v powershell.exe >/dev/null 2>&1; then
+  if ( cd "$ROOT/dist" && zip -r -q "$ZIP_NAME" "$OUT_NAME" ); then
+    zip_ok=1
+  fi
+fi
+# Windows 10+ / GitHub Actions: bsdtar создаёт .zip через -a (пути Git Bash ок).
+if [[ "$zip_ok" -eq 0 ]]; then
+  if ( cd "$ROOT/dist" && tar -a -cf "$ZIP_NAME" "$OUT_NAME" ); then
+    zip_ok=1
+  else
+    rm -f "$ZIP"
+  fi
+fi
+if [[ "$zip_ok" -eq 0 ]] && command -v powershell.exe >/dev/null 2>&1; then
+  OUT_WIN="$(to_win_path "$OUT")"
+  ZIP_WIN="$(to_win_path "$ZIP")"
   powershell.exe -NoProfile -Command \
-    "Compress-Archive -Path '$OUT' -DestinationPath '$ZIP' -Force"
-else
-  echo "Нет zip/powershell — папка готова: $OUT" >&2
-  exit 0
+    "Compress-Archive -LiteralPath '$OUT_WIN' -DestinationPath '$ZIP_WIN' -Force"
+  zip_ok=1
+fi
+
+if [[ "$zip_ok" -eq 0 || ! -f "$ZIP" ]]; then
+  echo "Не удалось создать $ZIP (нужен zip, tar -a или powershell)" >&2
+  echo "Папка без архива: $OUT" >&2
+  exit 1
 fi
 
 echo
