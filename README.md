@@ -20,57 +20,75 @@
 cargo run --release
 ```
 
-Сборка под текущую ОС:
-
-```bash
-cargo build --release
-```
-
 Бинарник: `target/release/stroke_trainer` (на Windows — `stroke_trainer.exe`).
 
 ### Зависимости для сборки UI
 
-- **Linux:** пакеты для окна/Wayland/X11 (на Fedora часто уже есть; иначе `libxkbcommon-devel` и связанные). Дискретная GPU не нужна.
-- **Windows:** [MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) + Rust (`rustup-init.exe`, toolchain `x86_64-pc-windows-msvc`).
-- **macOS:** Xcode Command Line Tools + Rust (`rustup`).
+- **Linux:** пакеты для окна/Wayland/X11 (на Fedora часто уже есть).
+- **Windows:** [MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) + Rust.
+- **macOS:** Xcode Command Line Tools + Rust.
 
-Один и тот же код собирается на всех трёх ОС: `cargo build --release`.
+## Архитектура кода
+
+```
+src/main.rs          — вход
+src/engine/          — движок (логика, ASR, данные) — будущий «сервер»
+  protocol.rs        — Command / Screen (граница с клиентом)
+  runtime.rs         — Engine::handle / tick
+  audio_pipe.rs      — буфер 120 с перед ASR
+  asr.rs, data.rs, exercise.rs
+src/ui/              — egui-клиент (рисует, шлёт Command)
+```
+
+UI не содержит бизнес-логики: только `engine.handle(Command::…)` и чтение состояния.
+
+План и условия (шина, сеть): см. [ROADMAP.md](ROADMAP.md).
+
+Проверки:
+
+```bash
+cargo test
+cargo test --features asr
+cargo clippy --features asr -- -D warnings
+```
+
+## Portable Windows
+
+Сборка без установщика (папка + zip):
+
+| Как | Команда / действие |
+|-----|-------------------|
+| **GitHub Actions** | Actions → workflow **windows-portable** → Run workflow → artifact |
+| **На Windows** | `./scripts/package-windows-portable.sh` |
+| **С голосом** | `./scripts/fetch-vosk-windows.sh` затем `./scripts/package-windows-portable.sh --asr` |
+| **Модель в zip** | `INCLUDE_MODEL=1 ./scripts/package-windows-portable.sh --asr` |
+
+Артефакты: `dist/stroke_trainer-windows-x86_64-text.zip` и `…-asr.zip`.
 
 ## Что умеет сейчас
 
-- Выбор слова по вопросу
-- Сборка фразы из слов
-- «Прочитать вслух» с самопроверкой («Получилось» / «Не получилось»)
-- Крупный шрифт, простой экран
-- Локальный прогресс занятий
+- Выбор слова, сборка фразы, «прочитать вслух»
+- Голос (Vosk): кнопка «Сказать», долгий диктофон, txt на диск
+- Буфер ASR 120 с и «подождите», пока разгребается очередь
+- Крупный UI, локальный прогресс
 
-## Фаза 2 — голос (Vosk, опционально)
-
-Офлайн-распознавание на CPU (маленькая русская модель). Собирается отдельно:
+## Фаза 2 — голос (Vosk)
 
 ```bash
+# Fedora: один раз
+./scripts/setup-asr.sh
+
 cargo run --release --features asr
 ```
 
-1. Скачайте модель [vosk-model-small-ru-0.22](https://alphacephei.com/vosk/models) (~45 МБ).
-2. Распакуйте в одно из мест:
-   - `assets/vosk/vosk-model-small-ru-0.22/`
-   - или каталог данных приложения (`…/stroke_trainer/vosk-model-small-ru-0.22`)
-3. На упражнении «Прочитать вслух» появится кнопка **Сказать**.
+Вручную:
 
-Без модели или без `--features asr` приложение работает в текстовом режиме и не падает.
+1. Linux: `alsa-lib-devel` / `libasound2-dev`.
+2. Модель [vosk-model-small-ru-0.22](https://alphacephei.com/vosk/models) в `assets/vosk/vosk-model-small-ru-0.22/` (или рядом с exe / в данных приложения).
+3. Нативная библиотека: [vosk-linux-x86_64](https://github.com/alphacep/vosk-api/releases/tag/v0.3.45) → `native/vosk/libvosk.so` (Windows: `./scripts/fetch-vosk-windows.sh`).
 
-На **Windows / Linux / macOS** для микрофона нужны системные права на запись звука; crate `vosk` подтянет нативный `libvosk` при сборке с feature `asr`.
-
-Дополнительно для `--features asr`:
-
-| ОС | Пакеты / заметки |
-|----|------------------|
-| **Linux (Fedora)** | `alsa-lib-devel` (для `cpal`) |
-| **Linux (Debian/Ubuntu)** | `libasound2-dev` |
-| **Windows** | WASAPI через `cpal`, отдельный ALSA не нужен |
-| **macOS** | CoreAudio через `cpal` |
+Без модели или без `--features asr` — текстовый режим.
 
 ## Лицензия
 
-MIT (код). Модели Vosk — по лицензии Alphacephei (смотрите на сайте моделей).
+MIT (код). Модели Vosk — по лицензии Alphacephei.
