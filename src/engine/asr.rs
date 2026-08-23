@@ -368,6 +368,48 @@ mod vosk_impl {
         let mut last_partial = String::new();
         let mut catching_up = false;
 
+        // Закрыть фразу. prefer_result — после DecodingState::Finalized (result()).
+        // Иначе — final_result() по тишине/Стоп. Запасной путь — last_partial.
+        let commit_utterance =
+            |recognizer: &mut Recognizer,
+             events: &Sender<ListenEvent>,
+             config: &ListenConfig,
+             last_partial: &mut String,
+             got_any: &mut bool,
+             last_single: &mut String,
+             prefer_result: bool|
+             -> bool {
+                let mut text = if prefer_result {
+                    recognizer
+                        .result()
+                        .single()
+                        .map(|s| s.text.to_string())
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                if text.trim().is_empty() {
+                    text = finalize_phrase(recognizer).unwrap_or_default();
+                }
+                if text.trim().is_empty() {
+                    text = last_partial.trim().to_string();
+                }
+                last_partial.clear();
+                config.set_live("");
+                let text = text.trim().to_string();
+                if text.is_empty() {
+                    return false;
+                }
+                *got_any = true;
+                if config.continuous {
+                    let _ = events.send(ListenEvent::Utterance(text));
+                    false
+                } else {
+                    *last_single = text;
+                    true
+                }
+            };
+
         loop {
             if config.should_stop() || session_start.elapsed() >= config.max_duration {
                 break;
@@ -381,11 +423,9 @@ mod vosk_impl {
             }
 
             let samples = if catching_up {
-                // Быстрый разгреб: без долгого ожидания.
                 match pipe.try_recv() {
                     Some(s) => Some(s),
                     None => {
-                        // Очередь пуста — снимаем паузу и предупреждение.
                         catching_up = false;
                         pipe.set_pause(false);
                         let _ = events.send(ListenEvent::ReadyAgain);
@@ -402,20 +442,21 @@ mod vosk_impl {
                     continue;
                 }
                 if heard_speech && last_loud.elapsed() >= SILENCE_AFTER_SPEECH {
-                    if let Some(text) = finalize_phrase(&mut recognizer) {
-                        got_any = true;
-                        last_partial.clear();
-                        config.set_live("");
-                        if config.continuous {
-                            let _ = events.send(ListenEvent::Utterance(text));
-                        } else {
-                            last_single = text;
-                            break;
-                        }
-                    }
+                    let stop = commit_utterance(
+                        &mut recognizer,
+                        events,
+                        config,
+                        &mut last_partial,
+                        &mut got_any,
+                        &mut last_single,
+                        false,
+                    );
                     heard_speech = false;
                     utter_start = Instant::now();
                     last_loud = Instant::now();
+                    if stop {
+                        break;
+                    }
                 } else {
                     let wait_limit = if config.continuous && got_any {
                         Duration::from_secs(90)
@@ -436,41 +477,37 @@ mod vosk_impl {
                 continue;
             };
 
-            if chunk_rms(&samples) >= SPEECH_RMS {
+            let loud = chunk_rms(&samples) >= SPEECH_RMS;
+            if loud {
                 heard_speech = true;
                 last_loud = Instant::now();
             }
 
             match recognizer.accept_waveform(&samples) {
-                Ok(DecodingState::Finalized) if heard_speech => {
-                    let text = recognizer
-                        .result()
-                        .single()
-                        .map(|s| s.text.to_string())
-                        .unwrap_or_default()
-                        .trim()
-                        .to_string();
-                    last_partial.clear();
-                    config.set_live("");
-                    if !text.is_empty() {
-                        got_any = true;
-                        if config.continuous {
-                            let _ = events.send(ListenEvent::Utterance(text));
-                        } else {
-                            last_single = text;
-                            break;
-                        }
-                    }
+                Ok(DecodingState::Finalized) if heard_speech || !last_partial.is_empty() => {
+                    let stop = commit_utterance(
+                        &mut recognizer,
+                        events,
+                        config,
+                        &mut last_partial,
+                        &mut got_any,
+                        &mut last_single,
+                        true,
+                    );
                     heard_speech = false;
                     utter_start = Instant::now();
                     last_loud = Instant::now();
+                    if stop {
+                        break;
+                    }
                 }
                 Ok(DecodingState::Running) => {
                     let partial = recognizer.partial_result().partial.trim().to_string();
                     if !partial.is_empty() {
                         heard_speech = true;
-                        last_loud = Instant::now();
+                        // Не трогаем last_loud при том же partial — иначе пауза никогда не сработает.
                         if partial != last_partial {
+                            last_loud = Instant::now();
                             last_partial.clear();
                             last_partial.push_str(&partial);
                             config.set_live(&partial);
@@ -479,6 +516,24 @@ mod vosk_impl {
                 }
                 Ok(DecodingState::Finalized) | Ok(DecodingState::Failed) | Err(_) => {}
             }
+
+            if !loud && heard_speech && last_loud.elapsed() >= SILENCE_AFTER_SPEECH {
+                let stop = commit_utterance(
+                    &mut recognizer,
+                    events,
+                    config,
+                    &mut last_partial,
+                    &mut got_any,
+                    &mut last_single,
+                    false,
+                );
+                heard_speech = false;
+                utter_start = Instant::now();
+                last_loud = Instant::now();
+                if stop {
+                    break;
+                }
+            }
         }
 
         if catching_up {
@@ -486,17 +541,19 @@ mod vosk_impl {
             let _ = events.send(ListenEvent::ReadyAgain);
         }
 
-        if heard_speech {
+        if heard_speech || !last_partial.is_empty() {
             for frame in pipe.drain() {
                 let _ = recognizer.accept_waveform(&frame);
             }
-            if let Some(text) = finalize_phrase(&mut recognizer) {
-                if config.continuous {
-                    let _ = events.send(ListenEvent::Utterance(text));
-                } else if last_single.is_empty() {
-                    last_single = text;
-                }
-            }
+            let _ = commit_utterance(
+                &mut recognizer,
+                events,
+                config,
+                &mut last_partial,
+                &mut got_any,
+                &mut last_single,
+                false,
+            );
         }
 
         config.set_live("");

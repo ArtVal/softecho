@@ -90,11 +90,13 @@ jobs:
           fi
           echo "OK: portable ASR ($dll_count .dll, zip $(wc -c < "$zip") bytes)"
 
-      - name: Upload zip
+      - name: Upload portable folder
         uses: actions/upload-artifact@v4
         with:
           name: softecho-windows-x86_64-${{ matrix.suffix }}
-          path: dist/softecho-windows-x86_64-${{ matrix.suffix }}.zip
+          # Папка, не .zip: GitHub и так заворачивает артефакт в zip —
+          # иначе получается zip внутри zip.
+          path: dist/softecho-windows-x86_64-${{ matrix.suffix }}/
           if-no-files-found: error
 
   release:
@@ -103,11 +105,21 @@ jobs:
     needs: windows
     runs-on: ubuntu-latest
     steps:
-      - name: Download archives
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          merge-multiple: true
-          path: dist
+          path: artifacts
+      - name: Pack zip for Release
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          shopt -s nullglob
+          for dir in artifacts/softecho-windows-x86_64-*/; do
+            name="$(basename "$dir")"
+            (cd artifacts && zip -r -q "../dist/${name}.zip" "$name")
+            ls -lh "dist/${name}.zip"
+          done
+          test -n "$(ls -A dist)" || { echo "Нет архивов" >&2; exit 1; }
       - name: Attach to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -116,9 +128,9 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           ls -la dist/
           shopt -s nullglob
-          files=(dist/*)
+          files=(dist/*.zip)
           if [[ ${#files[@]} -eq 0 ]]; then
-            echo "Нет файлов в dist/" >&2
+            echo "Нет zip в dist/" >&2
             exit 1
           fi
           if ! gh release view "$tag" >/dev/null 2>&1; then

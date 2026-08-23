@@ -73,11 +73,12 @@ jobs:
           ./scripts/package-linux-portable.sh $ARGS
           ls -la dist/
 
-      - name: Upload archive
+      - name: Upload portable folder
         uses: actions/upload-artifact@v4
         with:
           name: softecho-linux-x86_64-${{ matrix.suffix }}
-          path: dist/softecho-linux-x86_64-${{ matrix.suffix }}.tar.gz
+          # Папка, не .tar.gz: иначе Actions даёт zip с tar.gz внутри.
+          path: dist/softecho-linux-x86_64-${{ matrix.suffix }}/
           if-no-files-found: error
 
   release:
@@ -86,11 +87,21 @@ jobs:
     needs: linux
     runs-on: ubuntu-latest
     steps:
-      - name: Download archives
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          merge-multiple: true
-          path: dist
+          path: artifacts
+      - name: Pack tar.gz for Release
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          shopt -s nullglob
+          for dir in artifacts/softecho-linux-x86_64-*/; do
+            name="$(basename "$dir")"
+            tar -czf "dist/${name}.tar.gz" -C artifacts "$name"
+            ls -lh "dist/${name}.tar.gz"
+          done
+          test -n "$(ls -A dist)" || { echo "Нет архивов" >&2; exit 1; }
       - name: Attach to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -99,9 +110,9 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           ls -la dist/
           shopt -s nullglob
-          files=(dist/*)
+          files=(dist/*.tar.gz)
           if [[ ${#files[@]} -eq 0 ]]; then
-            echo "Нет файлов в dist/" >&2
+            echo "Нет tar.gz в dist/" >&2
             exit 1
           fi
           if ! gh release view "$tag" >/dev/null 2>&1; then

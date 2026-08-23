@@ -29,7 +29,9 @@
 
 1. [Actions](https://github.com/ArtVal/softecho/actions) → workflow **windows-portable** / **linux-portable** / **macos-portable**
 2. Успешный run → внизу **Artifacts**
-3. Скачать архив **text** (без голоса) или **asr** (с `libvosk`)
+3. Скачать `…-text` или `…-asr` и распаковать **один** раз: внутри сразу portable-папка (`softecho.exe` / бинарник + dll при asr)
+
+> GitHub всегда кладёт артефакт в zip — поэтому в CI мы грузим **папку**, а не готовый `.zip`/`.tar.gz` (иначе получается архив в архиве). Готовые `.zip` / `.tar.gz` — на странице [Releases](https://github.com/ArtVal/softecho/releases).
 
 | Артефакт | Содержимое |
 |----------|------------|

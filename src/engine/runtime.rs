@@ -693,6 +693,40 @@ impl Engine {
         }
     }
 
+    /// Хвост из live UI / listen_live, если Utterance не успел уйти в transcript.
+    fn dictaphone_live_tail(&self) -> String {
+        let from_ui = self.dictaphone.live_text.trim().to_string();
+        if !from_ui.is_empty() {
+            from_ui
+        } else {
+            self.listen_live
+                .lock()
+                .map(|g| g.trim().to_string())
+                .unwrap_or_default()
+        }
+    }
+
+    fn flush_dictaphone_live_tail(&mut self) {
+        let live_tail = self.dictaphone_live_tail();
+        if !live_tail.is_empty() {
+            let already = self
+                .dictaphone
+                .transcript
+                .lines()
+                .any(|l| l.trim() == live_tail);
+            if !already {
+                self.append_dictaphone_phrase(&live_tail);
+            }
+        }
+        self.dictaphone.live_text.clear();
+        if let Ok(mut g) = self.listen_live.lock() {
+            g.clear();
+        }
+        if let Ok(mut g) = self.dictaphone.live_partial.lock() {
+            g.clear();
+        }
+    }
+
     fn spawn_listen(
         &mut self,
         grammar: Vec<String>,
@@ -787,6 +821,9 @@ impl Engine {
                     if let Ok(mut g) = self.listen_live.lock() {
                         g.clear();
                     }
+                    if let Ok(mut g) = self.dictaphone.live_partial.lock() {
+                        g.clear();
+                    }
                 }
                 ListenEvent::Done(outcome) => {
                     self.listen_rx = None;
@@ -803,12 +840,12 @@ impl Engine {
                             }
                             match outcome {
                                 Ok(heard) => {
+                                    self.flush_dictaphone_live_tail();
                                     if self.dictaphone.transcript.is_empty()
                                         && !heard.text.is_empty()
                                     {
                                         self.append_dictaphone_phrase(&heard.text);
                                     }
-                                    self.dictaphone.live_text.clear();
                                     if self.dictaphone.save_path.is_some()
                                         && !self.dictaphone.transcript.is_empty()
                                     {
@@ -816,6 +853,7 @@ impl Engine {
                                     }
                                 }
                                 Err(e) => {
+                                    self.flush_dictaphone_live_tail();
                                     if self.dictaphone.transcript.is_empty() {
                                         self.dictaphone.error = Some(e);
                                     } else {
