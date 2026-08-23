@@ -1,7 +1,8 @@
 //! Клиентский UI (egui). Общается с движком только через Command / геттеры / tick.
 
 use crate::engine::{
-    AsrStatus, CheckResult, Command, Engine, Exercise, ModelDownloadState, Screen, UserAnswer,
+    AsrStatus, CheckResult, Command, Engine, Exercise, ExerciseStage, ModelDownloadState, Screen,
+    UserAnswer,
 };
 use crate::ui::theme::apply_theme;
 use crate::ui::widgets::{big_button, str_byte_tail};
@@ -34,12 +35,14 @@ impl eframe::App for UiApp {
             ui.add_space(12.0);
             match self.engine.screen().clone() {
                 Screen::Home => self.ui_home(ui),
+                Screen::LevelPick => self.ui_level_pick(ui),
                 Screen::Exercise => self.ui_exercise(ui),
                 Screen::Feedback {
                     result,
                     heard,
                     expected,
                 } => self.ui_feedback(ui, result, heard, expected),
+                Screen::DiagnosisResult { level } => self.ui_diagnosis_result(ui, level),
                 Screen::Dictaphone => self.ui_dictaphone(ui),
                 Screen::Settings => self.ui_settings(ui),
                 Screen::Result { correct, total } => self.ui_result(ui, correct, total),
@@ -79,6 +82,17 @@ impl UiApp {
                 .font(FontId::proportional(18.0))
                 .color(Color32::DARK_GRAY),
             );
+            ui.add_space(8.0);
+            let level_text = match self.engine.level() {
+                Some(l) => format!("Уровень: {}", l.label_ru()),
+                None => "Уровень не выбран — диагностика или вручную".into(),
+            };
+            ui.label(
+                RichText::new(level_text)
+                    .font(FontId::proportional(20.0))
+                    .strong()
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
 
             ui.add_space(12.0);
             match self.engine.asr_status() {
@@ -111,9 +125,17 @@ impl UiApp {
                 ui.colored_label(Color32::from_rgb(160, 60, 40), format!("Прогресс: {err}"));
             }
 
-            ui.add_space(36.0);
+            ui.add_space(28.0);
             if big_button(ui, "Начать занятие", Color32::from_rgb(40, 110, 180)).clicked() {
                 self.engine.handle(Command::StartSession);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Экспресс-диагностика", Color32::from_rgb(40, 130, 90)).clicked() {
+                self.engine.handle(Command::StartDiagnosis);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Выбрать уровень", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenLevelPick);
             }
             ui.add_space(12.0);
             if big_button(ui, "Настройки", Color32::from_rgb(90, 100, 120)).clicked() {
@@ -131,6 +153,78 @@ impl UiApp {
                         .font(FontId::proportional(16.0))
                         .color(Color32::DARK_GRAY),
                 );
+            }
+        });
+    }
+
+    fn ui_level_pick(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            ui.add_space(28.0);
+            ui.label(
+                RichText::new("Уровень")
+                    .font(FontId::proportional(36.0))
+                    .strong(),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(
+                    "Можно пропустить диагностику и выбрать ступень вручную.\n\
+                     Занятие начнётся с этой ступени и выше.",
+                )
+                .font(FontId::proportional(18.0))
+                .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(24.0);
+            for level in ExerciseStage::ALL {
+                if big_button(ui, level.label_ru(), Color32::from_rgb(40, 110, 180)).clicked() {
+                    self.engine.handle(Command::SetLevel(level));
+                }
+                ui.add_space(12.0);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Экспресс-диагностика", Color32::from_rgb(40, 130, 90)).clicked()
+            {
+                self.engine.handle(Command::StartDiagnosis);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::LeaveLevelPick);
+            }
+        });
+    }
+
+    fn ui_diagnosis_result(&mut self, ui: &mut egui::Ui, level: ExerciseStage) {
+        ui.vertical_centered(|ui| {
+            ui.add_space(40.0);
+            ui.label(
+                RichText::new("Диагностика готова")
+                    .font(FontId::proportional(36.0))
+                    .strong(),
+            );
+            ui.add_space(16.0);
+            ui.label(
+                RichText::new(format!("Уровень: {}", level.label_ru()))
+                    .font(FontId::proportional(32.0))
+                    .strong()
+                    .color(Color32::from_rgb(30, 100, 70)),
+            );
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new("Сохранён. Занятие пойдёт с этой ступени.")
+                    .font(FontId::proportional(18.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(36.0);
+            if big_button(ui, "Начать занятие", Color32::from_rgb(40, 110, 180)).clicked() {
+                self.engine.handle(Command::StartSession);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Выбрать другой", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenLevelPick);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "На главную", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::GoHome);
             }
         });
     }
@@ -259,7 +353,22 @@ impl UiApp {
         };
         let total = session.exercises.len();
         let idx = session.index;
-        let progress_label = format!("Упражнение {} из {}", idx + 1, total);
+        let stage_label = match session.exercises.get(idx).map(Exercise::stage) {
+            Some(ExerciseStage::Syllable) => "Слоги",
+            Some(ExerciseStage::Word) => "Слова",
+            Some(ExerciseStage::Phrase) => "Фразы",
+            None => "",
+        };
+        let mode = if self.engine.session_is_diagnosis() {
+            "Диагностика"
+        } else {
+            "Занятие"
+        };
+        let progress_label = if stage_label.is_empty() {
+            format!("{mode} · {} из {}", idx + 1, total)
+        } else {
+            format!("{mode} · {stage_label} · {} из {}", idx + 1, total)
+        };
 
         ui.vertical_centered(|ui| {
             ui.label(

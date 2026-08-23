@@ -1,18 +1,24 @@
 //! Протокол движок ↔ UI (позже ↔ сеть).
 //! Команды идут от клиента; состояние читается с движка после `tick`/`handle`.
 
-use super::exercise::{CheckResult, UserAnswer};
+use super::exercise::{CheckResult, ExerciseStage, UserAnswer};
 use std::time::Duration;
 
 /// Экран навигации (общее для UI и движка).
 #[derive(Debug, Clone)]
 pub enum Screen {
     Home,
+    /// Ручной выбор уровня (пропуск диагностики).
+    LevelPick,
     Exercise,
     Feedback {
         result: CheckResult,
         heard: Option<String>,
         expected: Option<String>,
+    },
+    /// Итог экспресс-диагностики: уровень уже записан в прогресс.
+    DiagnosisResult {
+        level: ExerciseStage,
     },
     Dictaphone,
     Settings,
@@ -27,7 +33,14 @@ pub enum Screen {
 #[allow(dead_code)] // часть команд — запас под UI/сеть
 pub enum Command {
     GoHome,
+    /// Занятие с текущего уровня; если уровня нет — экран выбора.
     StartSession,
+    /// Короткий прогон слог→слово→фраза, затем автоуровень.
+    StartDiagnosis,
+    OpenLevelPick,
+    LeaveLevelPick,
+    /// Ручная установка уровня (сохраняется локально).
+    SetLevel(ExerciseStage),
     OpenDictaphone,
     OpenSettings,
     LeaveSettings,

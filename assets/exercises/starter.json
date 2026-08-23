@@ -1,50 +1,126 @@
 {
-  "title": "Стартовый набор",
+  "title": "Слоги → слова → фразы",
   "exercises": [
     {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "МА",
+      "speak": "ма ма ма"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ПА",
+      "speak": "па па па"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "БА",
+      "speak": "ба ба ба"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ДА",
+      "speak": "да да да"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ТА",
+      "speak": "та та та"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "КА",
+      "speak": "ка ка ка"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "НА",
+      "speak": "на на на"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ЛА",
+      "speak": "ла ла ла"
+    },
+    {
       "type": "choose_word",
+      "stage": "syllable",
+      "prompt": "Какой слог написан: МА?",
+      "options": ["ма", "па", "ба", "да"],
+      "answer": "ма"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
       "prompt": "Что пьют утром?",
       "options": ["чай", "стол", "окно", "ключ"],
       "answer": "чай"
     },
     {
       "type": "choose_word",
+      "stage": "word",
       "prompt": "Чем пишут на бумаге?",
       "options": ["ручка", "чашка", "дверь", "лампа"],
       "answer": "ручка"
     },
     {
-      "type": "build_phrase",
-      "prompt": "Составьте фразу",
-      "words": ["Я", "пью", "воду"],
-      "answer": "Я пью воду"
-    },
-    {
-      "type": "build_phrase",
-      "prompt": "Составьте фразу",
-      "words": ["Сегодня", "хорошая", "погода"],
-      "answer": "Сегодня хорошая погода"
-    },
-    {
-      "type": "read_aloud",
-      "prompt": "Прочитайте вслух",
-      "text": "Доброе утро"
-    },
-    {
-      "type": "read_aloud",
-      "prompt": "Прочитайте вслух",
-      "text": "Мне нужна помощь"
-    },
-    {
       "type": "choose_word",
+      "stage": "word",
       "prompt": "Где спят?",
       "options": ["кровать", "ложка", "книга", "зонтик"],
       "answer": "кровать"
     },
     {
       "type": "read_aloud",
-      "prompt": "Прочитайте вслух",
-      "text": "Спасибо большое"
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "мама"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "вода"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "дом"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Составьте фразу",
+      "words": ["Я", "пью", "воду"],
+      "answer": "Я пью воду"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Доброе утро"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Спасибо"
     }
   ]
 }

@@ -17,6 +17,6 @@ pub mod vosk_runtime;
 pub mod vosk_download;
 
 pub use asr::AsrStatus;
-pub use exercise::{CheckResult, Exercise, UserAnswer};
+pub use exercise::{CheckResult, Exercise, ExerciseStage, UserAnswer};
 pub use protocol::{Command, ModelDownloadState, Screen};
 pub use runtime::Engine;

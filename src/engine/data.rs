@@ -150,12 +150,25 @@ pub fn vosk_model_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::exercise::ExerciseStage;
 
     #[test]
     fn starter_pack_loads_and_validates() {
         let pack = load_starter_pack().expect("starter.json должен разбираться");
-        assert_eq!(pack.title, "Стартовый набор");
+        assert_eq!(pack.title, "Слоги → слова → фразы");
         assert!(!pack.exercises.is_empty());
+        assert!(pack
+            .exercises
+            .iter()
+            .any(|e| e.stage() == ExerciseStage::Syllable));
+        assert!(pack
+            .exercises
+            .iter()
+            .any(|e| e.stage() == ExerciseStage::Word));
+        assert!(pack
+            .exercises
+            .iter()
+            .any(|e| e.stage() == ExerciseStage::Phrase));
     }
 
     #[test]

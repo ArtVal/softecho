@@ -9,7 +9,8 @@ use super::data::{
     save_dictaphone_text, save_progress, user_data_dir, vosk_model_dir,
 };
 use super::exercise::{
-    check_answer, speech_matches, CheckResult, Exercise, ExercisePack, Progress, UserAnswer,
+    build_diagnosis_set, check_answer, infer_level, order_session_for_level, speech_matches,
+    CheckResult, Exercise, ExercisePack, ExerciseStage, Progress, UserAnswer,
 };
 use super::protocol::{Command, ModelDownloadState, Screen, TickResult};
 use super::vosk_download::{spawn_model_download, DownloadMsg};
@@ -58,6 +59,12 @@ impl Default for DictaphoneState {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SessionKind {
+    Practice,
+    Diagnosis,
+}
+
 pub struct SessionState {
     pub exercises: Vec<Exercise>,
     pub index: usize,
@@ -71,6 +78,9 @@ pub struct SessionState {
     pub listen_error: Option<String>,
     /// Текст по мере распознавания.
     pub live_text: String,
+    kind: SessionKind,
+    /// Итоги по заданиям диагностики (ступень, верно?).
+    outcomes: Vec<(ExerciseStage, bool)>,
 }
 
 pub struct Engine {
@@ -256,8 +266,11 @@ impl Engine {
     }
 
     fn start_session(&mut self) {
-        let mut exercises = self.pack.exercises.clone();
-        exercises.shuffle(&mut rand::rng());
+        let Some(level) = self.progress.level else {
+            self.screen = Screen::LevelPick;
+            return;
+        };
+        let exercises = order_session_for_level(self.pack.exercises.clone(), level);
         if exercises.is_empty() {
             return;
         }
@@ -271,10 +284,43 @@ impl Engine {
             listening: false,
             listen_error: None,
             live_text: String::new(),
+            kind: SessionKind::Practice,
+            outcomes: vec![],
         };
         session.prepare_current();
         self.session = Some(session);
         self.screen = Screen::Exercise;
+    }
+
+    fn start_diagnosis(&mut self) {
+        const PER_STAGE: usize = 2;
+        let exercises = build_diagnosis_set(&self.pack.exercises, PER_STAGE);
+        if exercises.is_empty() {
+            return;
+        }
+        let mut session = SessionState {
+            exercises,
+            index: 0,
+            correct: 0,
+            choice_options: vec![],
+            pool: vec![],
+            picked: vec![],
+            listening: false,
+            listen_error: None,
+            live_text: String::new(),
+            kind: SessionKind::Diagnosis,
+            outcomes: vec![],
+        };
+        session.prepare_current();
+        self.session = Some(session);
+        self.screen = Screen::Exercise;
+    }
+
+    fn set_level(&mut self, level: ExerciseStage) {
+        self.progress.set_level(level);
+        self.persist_progress();
+        self.session = None;
+        self.screen = Screen::Home;
     }
 
     pub fn current_exercise(&self) -> Option<&Exercise> {
@@ -299,6 +345,11 @@ impl Engine {
         let result = check_answer(&ex, &answer);
         if result == CheckResult::Correct {
             session.correct += 1;
+        }
+        if session.kind == SessionKind::Diagnosis {
+            session
+                .outcomes
+                .push((ex.stage(), result == CheckResult::Correct));
         }
         let heard = match &answer {
             UserAnswer::ReadDone { heard, .. } => heard.clone(),
@@ -326,12 +377,23 @@ impl Engine {
         };
         session.index += 1;
         if session.index >= session.exercises.len() {
-            let correct = session.correct;
-            let total = session.exercises.len() as u32;
-            self.progress.record_session(correct, total);
-            self.persist_progress();
-            self.session = None;
-            self.screen = Screen::Result { correct, total };
+            match session.kind {
+                SessionKind::Diagnosis => {
+                    let level = infer_level(&session.outcomes);
+                    self.progress.set_level(level);
+                    self.persist_progress();
+                    self.session = None;
+                    self.screen = Screen::DiagnosisResult { level };
+                }
+                SessionKind::Practice => {
+                    let correct = session.correct;
+                    let total = session.exercises.len() as u32;
+                    self.progress.record_session(correct, total);
+                    self.persist_progress();
+                    self.session = None;
+                    self.screen = Screen::Result { correct, total };
+                }
+            }
         } else {
             session.prepare_current();
             self.screen = Screen::Exercise;
@@ -351,10 +413,13 @@ impl Engine {
             return;
         };
 
-        let grammar: Vec<String> = target
-            .split_whitespace()
-            .map(|w| w.to_lowercase())
-            .collect();
+        let mut grammar: Vec<String> = Vec::new();
+        for w in target.split_whitespace() {
+            let w = w.to_lowercase();
+            if !grammar.iter().any(|g| g == &w) {
+                grammar.push(w);
+            }
+        }
 
         if let Some(session) = self.session.as_mut() {
             session.listening = true;
@@ -680,6 +745,22 @@ impl Engine {
                 self.abort_listen();
                 self.start_session();
             }
+            Command::StartDiagnosis => {
+                self.abort_listen();
+                self.start_diagnosis();
+            }
+            Command::OpenLevelPick => {
+                self.abort_listen();
+                self.session = None;
+                self.screen = Screen::LevelPick;
+            }
+            Command::LeaveLevelPick => {
+                self.screen = Screen::Home;
+            }
+            Command::SetLevel(level) => {
+                self.abort_listen();
+                self.set_level(level);
+            }
             Command::OpenDictaphone => {
                 self.abort_listen();
                 self.dictaphone = DictaphoneState::default();
@@ -774,6 +855,16 @@ impl Engine {
         self.session.as_ref()
     }
 
+    pub fn session_is_diagnosis(&self) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|s| s.kind == SessionKind::Diagnosis)
+    }
+
+    pub fn level(&self) -> Option<ExerciseStage> {
+        self.progress.level
+    }
+
     pub fn asr_status(&self) -> AsrStatus {
         match self.recognizer.try_lock() {
             Ok(r) => r.status(),
@@ -829,8 +920,18 @@ mod tests {
     use crate::engine::protocol::{ModelDownloadState, Screen};
 
     #[test]
+    fn start_session_without_level_opens_picker() {
+        let mut eng = Engine::new_logic_only();
+        eng.progress.level = None;
+        eng.handle(Command::StartSession);
+        assert!(matches!(eng.screen(), Screen::LevelPick));
+        assert!(eng.session().is_none());
+    }
+
+    #[test]
     fn start_session_opens_exercise() {
         let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Syllable);
         assert!(matches!(eng.screen(), Screen::Home));
         eng.handle(Command::StartSession);
         assert!(matches!(eng.screen(), Screen::Exercise));
@@ -838,11 +939,123 @@ mod tests {
         let s = eng.session().unwrap();
         assert!(!s.exercises.is_empty());
         assert_eq!(s.index, 0);
+        let stages: Vec<_> = s.exercises.iter().map(Exercise::stage).collect();
+        assert_eq!(stages.first(), Some(&crate::engine::ExerciseStage::Syllable));
+        let mut seen_word = false;
+        let mut seen_phrase = false;
+        for st in &stages {
+            match st {
+                crate::engine::ExerciseStage::Syllable => {
+                    assert!(!seen_word && !seen_phrase);
+                }
+                crate::engine::ExerciseStage::Word => {
+                    seen_word = true;
+                    assert!(!seen_phrase);
+                }
+                crate::engine::ExerciseStage::Phrase => seen_phrase = true,
+            }
+        }
+        assert!(seen_word && seen_phrase);
+    }
+
+    #[test]
+    fn set_level_manual_and_filter_practice() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::SetLevel(ExerciseStage::Word));
+        assert_eq!(eng.level(), Some(ExerciseStage::Word));
+        assert!(matches!(eng.screen(), Screen::Home));
+        eng.handle(Command::StartSession);
+        let s = eng.session().unwrap();
+        assert!(s.exercises.iter().all(|e| e.stage() >= ExerciseStage::Word));
+        assert!(!s.exercises.iter().any(|e| e.stage() == ExerciseStage::Syllable));
+    }
+
+    #[test]
+    fn diagnosis_sets_level_automatically() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::StartDiagnosis);
+        assert!(eng.session_is_diagnosis());
+        assert!(matches!(eng.screen(), Screen::Exercise));
+        // Все ответы верные → уровень «Фразы».
+        loop {
+            let Some(ex) = eng.current_exercise().cloned() else {
+                break;
+            };
+            match ex {
+                Exercise::ChooseWord { answer, .. } => {
+                    eng.handle(Command::Submit(UserAnswer::Choice(answer)));
+                }
+                Exercise::BuildPhrase { answer, .. } => {
+                    let parts: Vec<_> = answer.split_whitespace().map(str::to_string).collect();
+                    eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
+                }
+                Exercise::ReadAloud { .. } => {
+                    eng.handle(Command::Submit(UserAnswer::ReadDone {
+                        matched: true,
+                        heard: None,
+                    }));
+                }
+            }
+            eng.handle(Command::AdvanceAfterFeedback);
+            if matches!(eng.screen(), Screen::DiagnosisResult { .. }) {
+                break;
+            }
+        }
+        assert!(matches!(
+            eng.screen(),
+            Screen::DiagnosisResult {
+                level: ExerciseStage::Phrase
+            }
+        ));
+        assert_eq!(eng.level(), Some(ExerciseStage::Phrase));
+        // Диагностика не считает обычное занятие.
+        assert_eq!(eng.progress().sessions_completed, 0);
+    }
+
+    #[test]
+    fn diagnosis_weak_syllables_sets_syllable_level() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::StartDiagnosis);
+        loop {
+            let Some(ex) = eng.current_exercise().cloned() else {
+                break;
+            };
+            let ok = ex.stage() != ExerciseStage::Syllable;
+            match ex {
+                Exercise::ChooseWord { answer, .. } => {
+                    if ok {
+                        eng.handle(Command::Submit(UserAnswer::Choice(answer)));
+                    } else {
+                        eng.handle(Command::Submit(UserAnswer::Choice("__нет__".into())));
+                    }
+                }
+                Exercise::BuildPhrase { answer, .. } => {
+                    let parts: Vec<_> = if ok {
+                        answer.split_whitespace().map(str::to_string).collect()
+                    } else {
+                        vec!["нет".into()]
+                    };
+                    eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
+                }
+                Exercise::ReadAloud { .. } => {
+                    eng.handle(Command::Submit(UserAnswer::ReadDone {
+                        matched: ok,
+                        heard: None,
+                    }));
+                }
+            }
+            eng.handle(Command::AdvanceAfterFeedback);
+            if matches!(eng.screen(), Screen::DiagnosisResult { .. }) {
+                break;
+            }
+        }
+        assert_eq!(eng.level(), Some(ExerciseStage::Syllable));
     }
 
     #[test]
     fn choose_word_flow_to_feedback() {
         let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Syllable);
         eng.handle(Command::StartSession);
         // Дойти до ChooseWord, если первый другой — листаем через неверный ответ нельзя без feedback.
         // Берём упражнение из сессии и сабмитим подходящий тип.
@@ -874,6 +1087,7 @@ mod tests {
     #[test]
     fn pick_pool_word_and_undo() {
         let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Syllable);
         eng.handle(Command::StartSession);
         // Найти BuildPhrase
         let mut found = false;
@@ -920,6 +1134,7 @@ mod tests {
     #[test]
     fn go_home_clears_session() {
         let mut eng = Engine::new_logic_only();
+        eng.progress.level = Some(ExerciseStage::Syllable);
         eng.handle(Command::StartSession);
         eng.handle(Command::GoHome);
         assert!(matches!(eng.screen(), Screen::Home));
@@ -1031,7 +1246,6 @@ mod tests {
         ));
     }
 
-    #[test]
     #[test]
     fn tick_repaints_while_download_working() {
         let mut eng = Engine::new_logic_only();
