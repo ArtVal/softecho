@@ -7,6 +7,9 @@ mod ui;
 use ui::UiApp;
 
 fn main() -> eframe::Result<()> {
+    #[cfg(feature = "asr")]
+    engine::vosk_runtime::prepare();
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([900.0, 700.0])

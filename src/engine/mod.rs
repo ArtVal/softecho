@@ -12,6 +12,8 @@ pub mod data;
 pub mod exercise;
 pub mod protocol;
 pub mod runtime;
+#[cfg(feature = "asr")]
+pub mod vosk_runtime;
 pub mod vosk_download;
 
 pub use asr::AsrStatus;

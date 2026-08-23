@@ -85,28 +85,48 @@ fn setup_windows(manifest: &std::path::Path, lib_dir: &std::path::Path) {
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     // Имя как у Alphacephei: libvosk.dll / libvosk.lib
     println!("cargo:rustc-link-lib=dylib=libvosk");
+    // Загрузка libvosk только при первом вызове — успеем настроить каталог exe в main().
+    println!("cargo:rustc-link-arg=/DELAYLOAD:libvosk.dll");
+    println!("cargo:rustc-link-lib=delayimp");
     println!("cargo:rerun-if-changed={}", dll.display());
 
-    copy_next_to_binary(manifest, &dll, "libvosk.dll");
-    // На случай, если загрузчик ищет vosk.dll
-    copy_next_to_binary(manifest, &dll, "vosk.dll");
-    // MinGW runtime из того же vosk-win64 (иначе «не найден libwinpthread-1.dll»)
-    for runtime in [
-        "libwinpthread-1.dll",
-        "libgcc_s_seh-1.dll",
-        "libstdc++-6.dll",
-    ] {
-        let src = lib_dir.join(runtime);
-        if src.exists() {
-            copy_next_to_binary(manifest, &src, runtime);
-            println!("cargo:rerun-if-changed={}", src.display());
-        } else {
-            println!(
-                "cargo:warning=Нет {} — ASR-сборка может не запуститься на другой машине. \
-                 Запустите ./scripts/fetch-vosk-windows.sh",
-                src.display()
-            );
+    copy_vosk_bundle(manifest, lib_dir);
+}
+
+fn copy_vosk_bundle(manifest: &std::path::Path, lib_dir: &std::path::Path) {
+    let mut copied = 0usize;
+    let Ok(entries) = std::fs::read_dir(lib_dir) else {
+        println!(
+            "cargo:warning=Не удалось прочитать {} — запустите ./scripts/fetch-vosk-windows.sh",
+            lib_dir.display()
+        );
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("dll") {
+            continue;
         }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        copy_next_to_binary(manifest, &path, name);
+        println!("cargo:rerun-if-changed={}", path.display());
+        copied += 1;
+    }
+
+    // На случай, если загрузчик ищет vosk.dll вместо libvosk.dll
+    let libvosk = lib_dir.join("libvosk.dll");
+    if libvosk.exists() {
+        copy_next_to_binary(manifest, &libvosk, "vosk.dll");
+    }
+
+    if copied == 0 {
+        println!(
+            "cargo:warning=В {} нет .dll — portable ASR не запустится без MinGW на целевой машине",
+            lib_dir.display()
+        );
     }
 }
 

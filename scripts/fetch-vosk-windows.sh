@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Скачать vosk-win64 (libvosk.dll + .lib) в native/vosk/ для сборки ASR под Windows.
+# Скачать vosk-win64 в native/vosk/ для ASR под Windows (все .dll из архива).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NATIVE_DIR="$ROOT/native/vosk"
@@ -14,26 +14,20 @@ echo "==> Скачиваю $URL"
 curl -L --fail --retry 3 -o "$TMP/vosk-win.zip" "$URL"
 unzip -o "$TMP/vosk-win.zip" -d "$TMP"
 
-# Архив: vosk-win64-.../libvosk.dll + MinGW runtime (без них exe падает на чужой машине).
-copy_from_zip() {
-  local name="$1"
-  local src
-  src="$(find "$TMP" -name "$name" | head -n1)"
-  if [[ -z "$src" ]]; then
-    echo "В архиве нет $name" >&2
-    return 1
-  fi
-  cp -v "$src" "$NATIVE_DIR/$name"
-}
+if ! find "$TMP" -name 'libvosk.dll' | grep -q .; then
+  echo "В архиве нет libvosk.dll" >&2
+  exit 1
+fi
 
-copy_from_zip libvosk.dll
-copy_from_zip libwinpthread-1.dll
-copy_from_zip libgcc_s_seh-1.dll
-copy_from_zip 'libstdc++-6.dll'
+echo "==> Копирую все .dll из vosk-win64 (MinGW runtime + libvosk)"
+while IFS= read -r -d '' dll; do
+  cp -v "$dll" "$NATIVE_DIR/$(basename "$dll")"
+done < <(find "$TMP" -type f -name '*.dll' -print0)
+
 LIB="$(find "$TMP" -name 'libvosk.lib' | head -n1)"
 if [[ -n "$LIB" ]]; then
   cp -v "$LIB" "$NATIVE_DIR/libvosk.lib"
 fi
 
-echo "Готово: $NATIVE_DIR/ (libvosk + MinGW runtime)"
+echo "Готово: $NATIVE_DIR/"
 ls -la "$NATIVE_DIR"/*.dll "$NATIVE_DIR"/libvosk.lib 2>/dev/null || ls -la "$NATIVE_DIR"

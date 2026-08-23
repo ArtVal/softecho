@@ -71,7 +71,12 @@ jobs:
           for f in softecho.exe libvosk.dll libwinpthread-1.dll libgcc_s_seh-1.dll libstdc++-6.dll; do
             unzip -l "$zip" | grep -F "$f" >/dev/null || { echo "В $zip нет $f" >&2; exit 1; }
           done
-          echo "OK: все runtime DLL в zip"
+          dll_count="$(unzip -l "$zip" | grep -E '\.dll$' | wc -l | tr -d ' ')"
+          if [[ "$dll_count" -lt 4 ]]; then
+            echo "В $zip слишком мало .dll ($dll_count)" >&2
+            exit 1
+          fi
+          echo "OK: portable ASR zip ($dll_count .dll)"
 
       - name: Upload zip
         uses: actions/upload-artifact@v4

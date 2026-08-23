@@ -125,27 +125,33 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 cp -v "$EXE" "$OUT/"
 
-# libvosk.dll собран MinGW — рядом нужны его runtime DLL из vosk-win64.
-copy_dll() {
-  local name="$1"
-  if [[ -f "$BIN_DIR/$name" ]]; then
-    cp -v "$BIN_DIR/$name" "$OUT/"
-  elif [[ -f "$ROOT/native/vosk/$name" ]]; then
-    cp -v "$ROOT/native/vosk/$name" "$OUT/"
-  else
-    return 1
-  fi
+# Все .dll из vosk-win64 (libvosk + MinGW runtime) — без MinGW на целевой машине.
+copy_all_dlls() {
+  local from="$1"
+  [[ -d "$from" ]] || return 1
+  shopt -s nullglob
+  local copied=0
+  for dll in "$from"/*.dll; do
+    cp -v "$dll" "$OUT/"
+    copied=1
+  done
+  shopt -u nullglob
+  [[ "$copied" -eq 1 ]]
 }
 
 if [[ "$WITH_ASR" -eq 1 ]]; then
-  copy_dll libvosk.dll || { echo "Нет libvosk.dll для ASR" >&2; exit 1; }
-  # Дубликат имени на случай загрузчика vosk.dll
+  copy_all_dlls "$BIN_DIR" || true
+  copy_all_dlls "$ROOT/native/vosk" || true
+  if [[ ! -f "$OUT/libvosk.dll" ]]; then
+    echo "Нет libvosk.dll в portable-папке" >&2
+    exit 1
+  fi
   if [[ ! -f "$OUT/vosk.dll" ]]; then
     cp -v "$OUT/libvosk.dll" "$OUT/vosk.dll"
   fi
-  for dll in libwinpthread-1.dll libgcc_s_seh-1.dll 'libstdc++-6.dll'; do
-    if ! copy_dll "$dll"; then
-      echo "Нет $dll (нужен полный vosk-win64). Запустите: ./scripts/fetch-vosk-windows.sh" >&2
+  for need in libwinpthread-1.dll libgcc_s_seh-1.dll libstdc++-6.dll; do
+    if [[ ! -f "$OUT/$need" ]]; then
+      echo "Нет $need — нужен полный vosk-win64 (./scripts/fetch-vosk-windows.sh)" >&2
       exit 1
     fi
   done
@@ -167,9 +173,8 @@ SoftEcho — portable (Windows x86_64)
 2. Запустите softecho.exe
 
 Голос (ASR):
-- Рядом с exe должны лежать: libvosk.dll, vosk.dll,
-  libwinpthread-1.dll, libgcc_s_seh-1.dll, libstdc++-6.dll
-  (все из архива — не переносите только .exe).
+- Рядом с exe лежат все .dll из vosk-win64 (libvosk + MinGW runtime).
+  Распакуйте папку целиком — не переносите только softecho.exe.
 - Модель: Настройки → «Скачать модель» (интернет один раз)
   или папка vosk-model-small-ru-0.22 рядом с exe
   https://alphacephei.com/vosk/models (vosk-model-small-ru-0.22)
