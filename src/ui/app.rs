@@ -5,7 +5,7 @@ use crate::engine::{
     UserAnswer,
 };
 use crate::ui::theme::apply_theme;
-use crate::ui::widgets::{big_button, str_byte_tail};
+use crate::ui::widgets::{big_button, screen_scroll, str_byte_tail};
 
 use eframe::egui::{self, Color32, FontId, RichText};
 
@@ -32,20 +32,24 @@ impl eframe::App for UiApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add_space(12.0);
+            ui.add_space(8.0);
             match self.engine.screen().clone() {
-                Screen::Home => self.ui_home(ui),
-                Screen::LevelPick => self.ui_level_pick(ui),
-                Screen::Exercise => self.ui_exercise(ui),
+                Screen::Home => screen_scroll(ui, "home", |ui| self.ui_home(ui)),
+                Screen::LevelPick => screen_scroll(ui, "level", |ui| self.ui_level_pick(ui)),
+                Screen::Exercise => screen_scroll(ui, "ex", |ui| self.ui_exercise(ui)),
                 Screen::Feedback {
                     result,
                     heard,
                     expected,
-                } => self.ui_feedback(ui, result, heard, expected),
-                Screen::DiagnosisResult { level } => self.ui_diagnosis_result(ui, level),
+                } => screen_scroll(ui, "fb", |ui| self.ui_feedback(ui, result, heard, expected)),
+                Screen::DiagnosisResult { level } => {
+                    screen_scroll(ui, "diag_ok", |ui| self.ui_diagnosis_result(ui, level))
+                }
                 Screen::Dictaphone => self.ui_dictaphone(ui),
-                Screen::Settings => self.ui_settings(ui),
-                Screen::Result { correct, total } => self.ui_result(ui, correct, total),
+                Screen::Settings => screen_scroll(ui, "settings", |ui| self.ui_settings(ui)),
+                Screen::Result { correct, total } => {
+                    screen_scroll(ui, "result", |ui| self.ui_result(ui, correct, total))
+                }
             }
         });
     }
@@ -54,7 +58,12 @@ impl eframe::App for UiApp {
 impl UiApp {
     fn ui_home(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
-            ui.add_space(40.0);
+            // Второстепенное — сверху, не между основными действиями.
+            ui.add_space(8.0);
+            if big_button(ui, "Настройки", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenSettings);
+            }
+            ui.add_space(20.0);
             ui.label(
                 RichText::new("SoftEcho")
                     .font(FontId::proportional(42.0))
@@ -102,7 +111,7 @@ impl UiApp {
                         .color(Color32::from_rgb(30, 120, 60)),
                 ),
                 AsrStatus::ModelMissing => ui.label(
-                    RichText::new("Голос: модель не найдена — откройте «Настройки»")
+                    RichText::new("Голос: модель не найдена — откройте «Настройки» сверху")
                         .font(FontId::proportional(16.0))
                         .color(Color32::from_rgb(150, 90, 30)),
                 ),
@@ -136,10 +145,6 @@ impl UiApp {
             ui.add_space(12.0);
             if big_button(ui, "Выбрать уровень", Color32::from_rgb(90, 100, 120)).clicked() {
                 self.engine.handle(Command::OpenLevelPick);
-            }
-            ui.add_space(12.0);
-            if big_button(ui, "Настройки", Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::OpenSettings);
             }
             ui.add_space(12.0);
             let dictaphone_ok = matches!(self.engine.asr_status(), AsrStatus::Ready);
@@ -635,144 +640,162 @@ impl UiApp {
     }
 
     fn ui_dictaphone(&mut self, ui: &mut egui::Ui) {
-        ui.vertical_centered(|ui| {
-            ui.add_space(24.0);
-            ui.label(
-                RichText::new("Долгий диктофон")
-                    .font(FontId::proportional(36.0))
-                    .strong(),
-            );
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new(
-                    "Говорите сколько нужно — текст копится и пишется в .txt на диск. Стоп — когда закончите.",
-                )
-                .font(FontId::proportional(18.0))
-                .color(Color32::DARK_GRAY),
-            );
-            ui.add_space(20.0);
-
-            if self.engine.dictaphone().listening {
-                ui.label(
-                    RichText::new("Идёт запись… (до 3 часов или Стоп)")
-                        .font(FontId::proportional(22.0))
-                        .color(Color32::from_rgb(140, 60, 100)),
-                );
-                if self.engine.please_wait() {
-                    ui.add_space(12.0);
-                    ui.label(
-                        RichText::new(
-                            "Подождите: распознаю накопленный звук. Говорить пока не нужно.",
-                        )
-                        .font(FontId::proportional(22.0))
-                        .strong()
-                        .color(Color32::from_rgb(150, 90, 30)),
-                    );
-                }
-                ui.add_space(12.0);
-                if big_button(ui, "Стоп", Color32::from_rgb(150, 70, 60)).clicked() {
-                    self.engine.handle(Command::StopDictaphone);
-                }
-            } else if big_button(ui, "Запись", Color32::from_rgb(140, 60, 100)).clicked() {
-                self.engine.handle(Command::ListenDictaphone);
-            }
-
-            if let Some(err) = &self.engine.dictaphone().error {
-                ui.add_space(12.0);
-                ui.colored_label(Color32::from_rgb(160, 60, 40), err);
-            }
-            if let Some(note) = &self.engine.dictaphone().save_note {
+        // Нижняя полоса всегда на виду (Windows: не прячется за панель задач).
+        egui::TopBottomPanel::bottom("dictaphone_footer")
+            .resizable(false)
+            .show_separator_line(true)
+            .show_inside(ui, |ui| {
                 ui.add_space(8.0);
-                ui.label(
-                    RichText::new(note)
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::from_rgb(50, 90, 70)),
-                );
-            }
-
-            // Хвост по байтам (без chars().count / полного clone каждый кадр).
-            const UI_BYTES: usize = 12_000;
-            let tr = self.engine.dictaphone().transcript.as_str();
-            let live = self.engine.dictaphone().live_text.as_str();
-            let truncated = tr.len() > UI_BYTES;
-            let tr_tail = str_byte_tail(tr, UI_BYTES);
-
-            if !tr.is_empty() || !live.is_empty() || self.engine.dictaphone().listening {
-                ui.add_space(24.0);
-                ui.label(
-                    RichText::new(if truncated {
-                        "Текст (хвост; полный — в .txt):"
+                ui.vertical_centered(|ui| {
+                    if self.engine.dictaphone().listening {
+                        if big_button(ui, "Стоп", Color32::from_rgb(150, 70, 60)).clicked() {
+                            self.engine.handle(Command::StopDictaphone);
+                        }
                     } else {
-                        "Текст:"
-                    })
-                    .font(FontId::proportional(20.0))
-                    .color(Color32::DARK_GRAY),
-                );
-                ui.add_space(8.0);
-                egui::ScrollArea::vertical()
-                    .max_height(320.0)
-                    .auto_shrink([false, false])
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        ui.set_min_width(ui.available_width().min(720.0));
-                        if truncated {
-                            ui.label(
-                                RichText::new("…")
-                                    .font(FontId::proportional(24.0))
-                                    .color(Color32::DARK_GRAY),
-                            );
-                        }
-                        if !tr_tail.is_empty() {
-                            ui.label(
-                                RichText::new(tr_tail)
-                                    .font(FontId::proportional(24.0))
-                                    .strong()
-                                    .color(Color32::from_rgb(20, 40, 60)),
-                            );
-                        }
-                        if !live.is_empty() {
-                            ui.label(
-                                RichText::new(live)
-                                    .font(FontId::proportional(24.0))
-                                    .color(Color32::from_rgb(80, 50, 100)),
-                            );
-                        } else if tr_tail.is_empty() {
-                            ui.label(
-                                RichText::new("…")
-                                    .font(FontId::proportional(24.0))
-                                    .strong()
-                                    .color(Color32::from_rgb(20, 40, 60)),
-                            );
-                        }
-                    });
-            }
-
-            ui.add_space(28.0);
-            if !self.engine.dictaphone().listening {
-                ui.horizontal(|ui| {
-                    let has_text = !self.engine.dictaphone().transcript.is_empty();
-                    if has_text
-                        && big_button(ui, "Сохранить txt", Color32::from_rgb(40, 110, 90)).clicked()
-                    {
-                        self.engine.handle(Command::SaveDictaphone);
-                    }
-                    ui.add_space(12.0);
-                    let can_clear = has_text
-                        || !self.engine.dictaphone().live_text.is_empty()
-                        || self.engine.dictaphone().error.is_some()
-                        || self.engine.dictaphone().save_note.is_some();
-                    if can_clear
-                        && big_button(ui, "Очистить", Color32::from_rgb(120, 90, 70)).clicked()
-                    {
-                        self.engine.handle(Command::ClearDictaphone);
-                    }
-                    ui.add_space(12.0);
-                    if big_button(ui, "Назад", Color32::from_rgb(90, 100, 110)).clicked() {
-                        self.engine.handle(Command::LeaveDictaphone);
+                        ui.horizontal(|ui| {
+                            let has_text = !self.engine.dictaphone().transcript.is_empty();
+                            if has_text
+                                && big_button(ui, "Сохранить txt", Color32::from_rgb(40, 110, 90))
+                                    .clicked()
+                            {
+                                self.engine.handle(Command::SaveDictaphone);
+                            }
+                            ui.add_space(12.0);
+                            let can_clear = has_text
+                                || !self.engine.dictaphone().live_text.is_empty()
+                                || self.engine.dictaphone().error.is_some()
+                                || self.engine.dictaphone().save_note.is_some();
+                            if can_clear
+                                && big_button(ui, "Очистить", Color32::from_rgb(120, 90, 70))
+                                    .clicked()
+                            {
+                                self.engine.handle(Command::ClearDictaphone);
+                            }
+                            ui.add_space(12.0);
+                            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 110)).clicked() {
+                                self.engine.handle(Command::LeaveDictaphone);
+                            }
+                        });
                     }
                 });
-            }
-        });
+                ui.add_space(12.0);
+            });
+
+        egui::ScrollArea::vertical()
+            .id_salt("dictaphone_body")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(16.0);
+                    ui.label(
+                        RichText::new("Долгий диктофон")
+                            .font(FontId::proportional(36.0))
+                            .strong(),
+                    );
+                    ui.add_space(8.0);
+                    ui.label(
+                        RichText::new(
+                            "Говорите сколько нужно — текст копится и пишется в .txt на диск. Стоп — когда закончите.",
+                        )
+                        .font(FontId::proportional(18.0))
+                        .color(Color32::DARK_GRAY),
+                    );
+                    ui.add_space(20.0);
+
+                    if self.engine.dictaphone().listening {
+                        ui.label(
+                            RichText::new("Идёт запись… (до 3 часов или Стоп)")
+                                .font(FontId::proportional(22.0))
+                                .color(Color32::from_rgb(140, 60, 100)),
+                        );
+                        if self.engine.please_wait() {
+                            ui.add_space(12.0);
+                            ui.label(
+                                RichText::new(
+                                    "Подождите: распознаю накопленный звук. Говорить пока не нужно.",
+                                )
+                                .font(FontId::proportional(22.0))
+                                .strong()
+                                .color(Color32::from_rgb(150, 90, 30)),
+                            );
+                        }
+                    } else if big_button(ui, "Запись", Color32::from_rgb(140, 60, 100)).clicked() {
+                        self.engine.handle(Command::ListenDictaphone);
+                    }
+
+                    if let Some(err) = &self.engine.dictaphone().error {
+                        ui.add_space(12.0);
+                        ui.colored_label(Color32::from_rgb(160, 60, 40), err);
+                    }
+                    if let Some(note) = &self.engine.dictaphone().save_note {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(note)
+                                .font(FontId::proportional(16.0))
+                                .color(Color32::from_rgb(50, 90, 70)),
+                        );
+                    }
+
+                    const UI_BYTES: usize = 12_000;
+                    let tr = self.engine.dictaphone().transcript.as_str();
+                    let live = self.engine.dictaphone().live_text.as_str();
+                    let truncated = tr.len() > UI_BYTES;
+                    let tr_tail = str_byte_tail(tr, UI_BYTES);
+
+                    if !tr.is_empty() || !live.is_empty() || self.engine.dictaphone().listening {
+                        ui.add_space(24.0);
+                        ui.label(
+                            RichText::new(if truncated {
+                                "Текст (хвост; полный — в .txt):"
+                            } else {
+                                "Текст:"
+                            })
+                            .font(FontId::proportional(20.0))
+                            .color(Color32::DARK_GRAY),
+                        );
+                        ui.add_space(8.0);
+                        let text_h = (ui.available_height() * 0.45).clamp(96.0, 280.0);
+                        egui::ScrollArea::vertical()
+                            .id_salt("dictaphone_text")
+                            .max_height(text_h)
+                            .auto_shrink([false, false])
+                            .stick_to_bottom(true)
+                            .show(ui, |ui| {
+                                ui.set_min_width(ui.available_width().min(720.0));
+                                if truncated {
+                                    ui.label(
+                                        RichText::new("…")
+                                            .font(FontId::proportional(24.0))
+                                            .color(Color32::DARK_GRAY),
+                                    );
+                                }
+                                if !tr_tail.is_empty() {
+                                    ui.label(
+                                        RichText::new(tr_tail)
+                                            .font(FontId::proportional(24.0))
+                                            .strong()
+                                            .color(Color32::from_rgb(20, 40, 60)),
+                                    );
+                                }
+                                if !live.is_empty() {
+                                    ui.label(
+                                        RichText::new(live)
+                                            .font(FontId::proportional(24.0))
+                                            .color(Color32::from_rgb(80, 50, 100)),
+                                    );
+                                } else if tr_tail.is_empty() {
+                                    ui.label(
+                                        RichText::new("…")
+                                            .font(FontId::proportional(24.0))
+                                            .strong()
+                                            .color(Color32::from_rgb(20, 40, 60)),
+                                    );
+                                }
+                            });
+                    }
+                    ui.add_space(16.0);
+                });
+            });
     }
 
     fn ui_result(&mut self, ui: &mut egui::Ui, correct: u32, total: u32) {

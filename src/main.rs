@@ -13,7 +13,7 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([900.0, 700.0])
-            .with_min_inner_size([640.0, 480.0])
+            .with_min_inner_size([480.0, 420.0])
             .with_title("SoftEcho"),
         ..Default::default()
     };

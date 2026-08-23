@@ -38,6 +38,18 @@ pub fn big_button(ui: &mut egui::Ui, label: &str, fill: Color32) -> egui::Respon
     response
 }
 
+/// Прокрутка экрана целиком — на низком окне (Windows + панель задач) кнопки не уезжают «за край».
+pub fn screen_scroll(ui: &mut egui::Ui, id: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
+    egui::ScrollArea::vertical()
+        .id_salt(id)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            add_contents(ui);
+            // Запас снизу: панель задач / жесткая навигация.
+            ui.add_space(24.0);
+        });
+}
+
 fn lighten(c: Color32, amount: u8) -> Color32 {
     Color32::from_rgb(
         c.r().saturating_add(amount),
@@ -45,4 +57,3 @@ fn lighten(c: Color32, amount: u8) -> Color32 {
         c.b().saturating_add(amount),
     )
 }
-
