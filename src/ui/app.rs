@@ -88,9 +88,9 @@ impl UiApp {
                         .color(Color32::from_rgb(30, 120, 60)),
                 ),
                 AsrStatus::ModelMissing => ui.label(
-                    RichText::new("Голос: модель не найдена — доступна самопроверка")
+                    RichText::new("Голос: модель не найдена — откройте «Настройки»")
                         .font(FontId::proportional(16.0))
-                        .color(Color32::DARK_GRAY),
+                        .color(Color32::from_rgb(150, 90, 30)),
                 ),
                 AsrStatus::Disabled => ui.label(
                     RichText::new("Голос: выключен в сборке (текстовый режим)")

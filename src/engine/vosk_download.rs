@@ -4,10 +4,12 @@ use std::fs::{self, File};
 use std::io::{copy, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
+use std::time::Duration;
 
 pub const MODEL_DIR_NAME: &str = "vosk-model-small-ru-0.22";
 const MODEL_URL: &str =
     "https://huggingface.co/rhasspy/vosk-models/resolve/main/ru/vosk-model-small-ru-0.22.zip";
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone)]
 pub enum DownloadMsg {
@@ -31,9 +33,22 @@ fn download_model(dest_parent: &Path, tx: &Sender<DownloadMsg>) -> Result<(), St
     let tmp_zip = dest_parent.join("vosk-model-download.tmp.zip");
     let _ = fs::remove_file(&tmp_zip);
 
+    let result = download_model_inner(dest_parent, &tmp_zip, tx);
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp_zip);
+    }
+    result
+}
+
+fn download_model_inner(
+    dest_parent: &Path,
+    tmp_zip: &Path,
+    tx: &Sender<DownloadMsg>,
+) -> Result<(), String> {
     let _ = tx.send(DownloadMsg::Phase("Скачиваю модель (~45 МБ)…".into()));
 
     let resp = ureq::get(MODEL_URL)
+        .timeout(DOWNLOAD_TIMEOUT)
         .call()
         .map_err(|e| format!("Не удалось скачать: {e}"))?;
 
@@ -43,7 +58,7 @@ fn download_model(dest_parent: &Path, tx: &Sender<DownloadMsg>) -> Result<(), St
         .filter(|&n| n > 0);
 
     let mut reader = resp.into_reader();
-    let mut file = File::create(&tmp_zip).map_err(|e| format!("Не удалось записать файл: {e}"))?;
+    let mut file = File::create(tmp_zip).map_err(|e| format!("Не удалось записать файл: {e}"))?;
     let mut buf = [0u8; 64 * 1024];
     let mut downloaded = 0u64;
     let mut last_percent = 255u8;
@@ -75,8 +90,8 @@ fn download_model(dest_parent: &Path, tx: &Sender<DownloadMsg>) -> Result<(), St
         fs::remove_dir_all(&model_path).map_err(|e| format!("Не удалось очистить каталог: {e}"))?;
     }
 
-    extract_zip(&tmp_zip, dest_parent)?;
-    let _ = fs::remove_file(&tmp_zip);
+    extract_zip(tmp_zip, dest_parent)?;
+    let _ = fs::remove_file(tmp_zip);
 
     if !model_path.is_dir() {
         return Err("В архиве нет папки vosk-model-small-ru-0.22".into());

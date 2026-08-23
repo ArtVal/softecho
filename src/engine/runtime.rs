@@ -210,9 +210,33 @@ impl Engine {
                 DownloadMsg::Done => {
                     self.model_download_rx = None;
                     self.reload_recognizer();
-                    self.model_download = ModelDownloadState::Succeeded;
-                    self.model_download_note =
-                        Some("Модель установлена. Голос готов.".into());
+                    match self.asr_status() {
+                        AsrStatus::Ready => {
+                            self.model_download = ModelDownloadState::Succeeded;
+                            self.model_download_note =
+                                Some("Модель установлена. Голос готов.".into());
+                        }
+                        AsrStatus::ModelMissing => {
+                            self.model_download = ModelDownloadState::Failed(
+                                "Файлы скачаны, но модель не загрузилась. \
+                                 Перезапустите приложение."
+                                    .into(),
+                            );
+                            self.model_download_note = None;
+                        }
+                        AsrStatus::Error(e) => {
+                            self.model_download = ModelDownloadState::Failed(format!(
+                                "Модель на диске, но не открылась: {e}"
+                            ));
+                            self.model_download_note = None;
+                        }
+                        AsrStatus::Disabled => {
+                            self.model_download = ModelDownloadState::Failed(
+                                "Голос выключен в этой сборке.".into(),
+                            );
+                            self.model_download_note = None;
+                        }
+                    }
                     tick.want_repaint = true;
                 }
                 DownloadMsg::Err(e) => {
@@ -511,6 +535,10 @@ impl Engine {
     pub fn tick(&mut self) -> TickResult {
         let mut tick = TickResult::default();
         self.poll_model_download(&mut tick);
+        if matches!(self.model_download, ModelDownloadState::Working { .. }) {
+            tick.want_repaint = true;
+            tick.repaint_after.get_or_insert(Duration::from_millis(200));
+        }
         if self.listen_rx.is_some() {
             self.sync_live_text();
         }
@@ -664,7 +692,7 @@ impl Engine {
             }
             Command::LeaveSettings => {
                 self.screen = Screen::Home;
-                if matches!(self.model_download, ModelDownloadState::Succeeded) {
+                if !matches!(self.model_download, ModelDownloadState::Working { .. }) {
                     self.model_download = ModelDownloadState::Idle;
                 }
                 self.model_download_note = None;
@@ -942,7 +970,7 @@ mod tests {
     }
 
     #[test]
-    fn poll_download_done_sets_succeeded() {
+    fn poll_download_done_updates_state_after_reload() {
         let (tx, rx) = mpsc::channel();
         tx.send(DownloadMsg::Done).unwrap();
         drop(tx);
@@ -950,14 +978,25 @@ mod tests {
         eng.test_download_rx(rx);
         let tick = eng.tick();
         assert!(tick.want_repaint);
-        assert!(matches!(
-            eng.model_download(),
-            ModelDownloadState::Succeeded
-        ));
-        assert_eq!(
-            eng.model_download_note(),
-            Some("Модель установлена. Голос готов.")
-        );
+        match eng.asr_status() {
+            AsrStatus::Ready => {
+                assert!(matches!(
+                    eng.model_download(),
+                    ModelDownloadState::Succeeded
+                ));
+                assert_eq!(
+                    eng.model_download_note(),
+                    Some("Модель установлена. Голос готов.")
+                );
+            }
+            _ => {
+                assert!(matches!(
+                    eng.model_download(),
+                    ModelDownloadState::Failed(_)
+                ));
+                assert!(eng.model_download_note().is_none());
+            }
+        }
     }
 
     #[test]
@@ -990,6 +1029,19 @@ mod tests {
                 percent: Some(42)
             } if label == "Скачиваю…"
         ));
+    }
+
+    #[test]
+    #[test]
+    fn tick_repaints_while_download_working() {
+        let mut eng = Engine::new_logic_only();
+        eng.model_download = ModelDownloadState::Working {
+            label: "Скачиваю…".into(),
+            percent: Some(10),
+        };
+        let tick = eng.tick();
+        assert!(tick.want_repaint);
+        assert_eq!(tick.repaint_after, Some(Duration::from_millis(200)));
     }
 
     #[test]
