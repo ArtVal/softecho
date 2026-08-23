@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn starter_pack_loads_and_validates() {
         let pack = load_pack(DEFAULT_PACK_ID).expect("starter.json должен разбираться");
-        assert_eq!(pack.title, "Слоги → слова → фразы");
+        assert_eq!(pack.title, "Слоги - слова - фразы");
         assert!(pack
             .exercises
             .iter()

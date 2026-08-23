@@ -169,12 +169,13 @@ impl UiApp {
             );
             ui.add_space(24.0);
             for entry in self.engine.pack_catalog() {
-                let label = if entry.id == current {
-                    format!("{} ✓", entry.title)
+                let selected = entry.id == current;
+                let fill = if selected {
+                    Color32::from_rgb(40, 130, 90)
                 } else {
-                    entry.title.clone()
+                    Color32::from_rgb(40, 110, 180)
                 };
-                if big_button(ui, &label, Color32::from_rgb(40, 110, 180)).clicked() {
+                if big_button(ui, &entry.title, fill).clicked() {
                     self.engine.handle(Command::SetPack(entry.id));
                 }
                 ui.add_space(12.0);
