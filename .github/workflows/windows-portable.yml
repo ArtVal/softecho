@@ -1,0 +1,67 @@
+# Portable-сборка под Windows (x86_64), без установщика.
+name: windows-portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asr: false
+            suffix: text
+          - asr: true
+            suffix: asr
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: win-${{ matrix.suffix }}
+
+      - name: Fetch Vosk Windows natives
+        if: matrix.asr
+        shell: bash
+        run: ./scripts/fetch-vosk-windows.sh
+
+      - name: Build release (text)
+        if: ${{ !matrix.asr }}
+        run: cargo build --release
+
+      - name: Build release (asr)
+        if: matrix.asr
+        run: cargo build --release --features asr
+
+      - name: Package portable zip
+        shell: bash
+        env:
+          SKIP_BUILD: "1"
+        run: |
+          set -euo pipefail
+          ARGS=
+          if [[ "${{ matrix.asr }}" == "true" ]]; then
+            ARGS=--asr
+          fi
+          ./scripts/package-windows-portable.sh $ARGS
+          ls -la dist/
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: stroke_trainer-windows-x86_64-${{ matrix.suffix }}
+          path: dist/stroke_trainer-windows-x86_64-${{ matrix.suffix }}.zip
+          if-no-files-found: error

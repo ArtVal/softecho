@@ -1,3 +1,9 @@
 /target
+/dist
 assets/vosk/vosk-model-*/
 assets/vosk/model/
+native/vosk/*.so
+native/vosk/*.dll
+native/vosk/*.dylib
+native/vosk/*.lib
+mailmap.txt
