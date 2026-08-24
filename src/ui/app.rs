@@ -533,12 +533,11 @@ impl UiApp {
         };
         let total = session.exercises.len();
         let idx = session.index;
-        let stage_label = match session.exercises.get(idx).map(Exercise::stage) {
-            Some(ExerciseStage::Syllable) => "Слоги",
-            Some(ExerciseStage::Word) => "Слова",
-            Some(ExerciseStage::Phrase) => "Фразы",
-            None => "",
-        };
+        let stage_label = session
+            .exercises
+            .get(idx)
+            .map(|e| e.stage().label_ru())
+            .unwrap_or("");
         let mode = if self.engine.session_is_diagnosis() {
             "Диагностика"
         } else {

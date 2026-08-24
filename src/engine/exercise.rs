@@ -8,17 +8,20 @@ pub struct ExercisePack {
     pub exercises: Vec<Exercise>,
 }
 
-/// Ступень / уровень занятия. Сессия идёт строго: слоги → слова → фразы.
+/// Ступень / уровень занятия. Сессия идёт строго: звуки → слоги → слова → фразы.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExerciseStage {
+    /// Изолированные гласные и согласные (А, О, М…).
+    Sound,
     Syllable,
     Word,
     Phrase,
 }
 
 impl ExerciseStage {
-    pub const ALL: [ExerciseStage; 3] = [
+    pub const ALL: [ExerciseStage; 4] = [
+        ExerciseStage::Sound,
         ExerciseStage::Syllable,
         ExerciseStage::Word,
         ExerciseStage::Phrase,
@@ -26,6 +29,7 @@ impl ExerciseStage {
 
     pub fn label_ru(self) -> &'static str {
         match self {
+            Self::Sound => "Звуки",
             Self::Syllable => "Слоги",
             Self::Word => "Слова",
             Self::Phrase => "Фразы",
@@ -117,30 +121,31 @@ impl Exercise {
     }
 }
 
+fn split_by_stage(exercises: Vec<Exercise>) -> Vec<Vec<Exercise>> {
+    let mut buckets: Vec<Vec<Exercise>> = ExerciseStage::ALL.iter().map(|_| Vec::new()).collect();
+    for ex in exercises {
+        if let Some(i) = ExerciseStage::ALL.iter().position(|s| *s == ex.stage()) {
+            buckets[i].push(ex);
+        }
+    }
+    buckets
+}
+
 /// Внутри ступени — случайный порядок; между ступенями — нет.
 #[allow(dead_code)]
 pub fn order_session(exercises: Vec<Exercise>) -> Vec<Exercise> {
     use rand::seq::SliceRandom;
-    let mut syllables = Vec::new();
-    let mut words = Vec::new();
-    let mut phrases = Vec::new();
-    for ex in exercises {
-        match ex.stage() {
-            ExerciseStage::Syllable => syllables.push(ex),
-            ExerciseStage::Word => words.push(ex),
-            ExerciseStage::Phrase => phrases.push(ex),
-        }
-    }
+    let mut buckets = split_by_stage(exercises);
     let mut rng = rand::rng();
-    syllables.shuffle(&mut rng);
-    words.shuffle(&mut rng);
-    phrases.shuffle(&mut rng);
-    syllables.extend(words);
-    syllables.extend(phrases);
-    syllables
+    let mut out = Vec::new();
+    for bucket in &mut buckets {
+        bucket.shuffle(&mut rng);
+        out.append(bucket);
+    }
+    out
 }
 
-/// Занятие с выбранного уровня: от этой ступени и выше (слоги→слова→фразы).
+/// Занятие с выбранного уровня: от этой ступени и выше (звуки→слоги→слова→фразы).
 #[allow(dead_code)]
 pub fn order_session_for_level(
     exercises: Vec<Exercise>,
@@ -155,23 +160,14 @@ pub fn order_session_for_level_with_map(
     level: ExerciseStage,
     map: &SpeechMap,
 ) -> Vec<Exercise> {
-    let mut syllables = Vec::new();
-    let mut words = Vec::new();
-    let mut phrases = Vec::new();
-    for ex in exercises {
-        if ex.stage() < level {
-            continue;
-        }
-        match ex.stage() {
-            ExerciseStage::Syllable => syllables.push(ex),
-            ExerciseStage::Word => words.push(ex),
-            ExerciseStage::Phrase => phrases.push(ex),
-        }
-    }
+    let filtered: Vec<Exercise> = exercises
+        .into_iter()
+        .filter(|ex| ex.stage() >= level)
+        .collect();
     let mut out = Vec::new();
-    out.extend(order_stage_by_map(syllables, map));
-    out.extend(order_stage_by_map(words, map));
-    out.extend(order_stage_by_map(phrases, map));
+    for bucket in split_by_stage(filtered) {
+        out.extend(order_stage_by_map(bucket, map));
+    }
     out
 }
 
@@ -343,6 +339,33 @@ pub fn check_answer(exercise: &Exercise, answer: &UserAnswer) -> CheckResult {
     }
 }
 
+/// Имя русской буквы, если распознаватель назвал согласный, а не звук.
+fn russian_letter_name(sound: &str) -> Option<&'static str> {
+    Some(match sound {
+        "б" => "бэ",
+        "в" => "вэ",
+        "г" => "гэ",
+        "д" => "дэ",
+        "ж" => "жэ",
+        "з" => "зэ",
+        "к" => "ка",
+        "л" => "эль",
+        "м" => "эм",
+        "н" => "эн",
+        "п" => "пэ",
+        "р" => "эр",
+        "с" => "эс",
+        "т" => "тэ",
+        "ф" => "эф",
+        "х" => "ха",
+        "ц" => "цэ",
+        "ч" => "че",
+        "ш" => "ша",
+        "щ" => "ща",
+        _ => return None,
+    })
+}
+
 /// Сравнение распознанной речи с образцом.
 /// Допускаем: совпадение целиком, цель как подстрока, хвост `[unk]` от Vosk.
 pub fn speech_matches(target: &str, heard: &str) -> bool {
@@ -360,15 +383,23 @@ pub fn speech_matches(target: &str, heard: &str) -> bool {
     }
     let t_words: Vec<&str> = target.split_whitespace().collect();
     let h_words: Vec<&str> = heard.split_whitespace().collect();
-    // Слог, повторённый для ASR: «ма ма ма» засчитываем, если услышали «ма».
+    // Повтор для ASR: «ма ма ма» / «а а а» засчитываем, если услышали единицу.
     if !t_words.is_empty() && t_words.iter().all(|w| *w == t_words[0]) {
-        return h_words.iter().any(|w| *w == t_words[0]);
+        let unit = t_words[0];
+        if h_words.contains(&unit) {
+            return true;
+        }
+        // Согласный: Vosk часто даёт имя буквы («эм» вместо «м»).
+        if let Some(name) = russian_letter_name(unit) {
+            return h_words.contains(&name);
+        }
+        return false;
     }
     // «доброе утро пожалуйста» при цели «доброе утро»
     h_words.windows(t_words.len().max(1)).any(|w| w == t_words.as_slice())
 }
 
-/// Оценка произнесения одной цели (слог / слово / фраза).
+/// Оценка произнесения одной цели (звук / слог / слово / фраза).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpeechRating {
     Unknown,
@@ -463,7 +494,7 @@ pub struct SpeechMapEntry {
 }
 
 /// Уникальные цели текущего набора + статистика из карты.
-/// Сначала слоги, потом слова, потом фразы (чтобы заголовки UI не прыгали).
+/// Сначала звуки, потом слоги, слова, фразы (чтобы заголовки UI не прыгали).
 pub fn pack_speech_entries(pack: &ExercisePack, map: &SpeechMap) -> Vec<SpeechMapEntry> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
@@ -493,13 +524,13 @@ pub struct Progress {
     pub sessions_completed: u32,
     pub total_correct: u32,
     pub total_answered: u32,
-    /// Рабочий уровень (слоги / слова / фразы). Ставится диагностикой или вручную.
+    /// Рабочий уровень (звуки / слоги / слова / фразы). Ставится диагностикой или вручную.
     #[serde(default)]
     pub level: Option<ExerciseStage>,
     /// Выбранный набор упражнений (`starter`, `daily`, …).
     #[serde(default)]
     pub pack_id: Option<String>,
-    /// Локальная карта: что получается по слогам/словам/фразам.
+    /// Локальная карта: что получается по звукам/слогам/словам/фразам.
     #[serde(default)]
     pub speech_map: SpeechMap,
 }
@@ -543,6 +574,9 @@ mod tests {
         assert!(speech_matches("ма ма ма", "ма"));
         assert!(speech_matches("ма", "ма ма"));
         assert!(!speech_matches("ма ма ма", "па"));
+        assert!(speech_matches("а а а", "а"));
+        assert!(speech_matches("м м м", "эм"));
+        assert!(!speech_matches("м м м", "пэ"));
     }
 
     #[test]
@@ -553,6 +587,12 @@ mod tests {
                 prompt: "p".into(),
                 text: "доброе утро".into(),
                 speak: None,
+            },
+            Exercise::ReadAloud {
+                stage: Some(ExerciseStage::Sound),
+                prompt: "v".into(),
+                text: "А".into(),
+                speak: Some("а а а".into()),
             },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Syllable),
@@ -572,12 +612,13 @@ mod tests {
         assert_eq!(
             stages,
             vec![
+                ExerciseStage::Sound,
                 ExerciseStage::Syllable,
                 ExerciseStage::Word,
                 ExerciseStage::Phrase
             ]
         );
-        assert_eq!(ordered[0].target_text(), Some("ма ма ма"));
+        assert_eq!(ordered[0].target_text(), Some("а а а"));
     }
 
     #[test]
@@ -638,6 +679,15 @@ mod tests {
             ]),
             ExerciseStage::Syllable
         );
+        // Меньше половины на звуках.
+        assert_eq!(
+            infer_level(&[
+                (ExerciseStage::Sound, false),
+                (ExerciseStage::Sound, false),
+                (ExerciseStage::Syllable, true),
+            ]),
+            ExerciseStage::Sound
+        );
         assert_eq!(
             infer_level(&[
                 (ExerciseStage::Syllable, true),
@@ -651,6 +701,12 @@ mod tests {
     #[test]
     fn diagnosis_set_covers_stages() {
         let pack = vec![
+            Exercise::ReadAloud {
+                stage: Some(ExerciseStage::Sound),
+                prompt: "v".into(),
+                text: "А".into(),
+                speak: None,
+            },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Syllable),
                 prompt: "s".into(),
@@ -671,10 +727,11 @@ mod tests {
             },
         ];
         let d = build_diagnosis_set(&pack, 2);
-        assert_eq!(d.len(), 3);
-        assert_eq!(d[0].stage(), ExerciseStage::Syllable);
-        assert_eq!(d[1].stage(), ExerciseStage::Word);
-        assert_eq!(d[2].stage(), ExerciseStage::Phrase);
+        assert_eq!(d.len(), 4);
+        assert_eq!(d[0].stage(), ExerciseStage::Sound);
+        assert_eq!(d[1].stage(), ExerciseStage::Syllable);
+        assert_eq!(d[2].stage(), ExerciseStage::Word);
+        assert_eq!(d[3].stage(), ExerciseStage::Phrase);
     }
 
     #[test]
@@ -821,6 +878,12 @@ mod tests {
                     speak: None,
                 },
                 Exercise::ReadAloud {
+                    stage: Some(ExerciseStage::Sound),
+                    prompt: "v".into(),
+                    text: "А".into(),
+                    speak: Some("а а а".into()),
+                },
+                Exercise::ReadAloud {
                     stage: Some(ExerciseStage::Syllable),
                     prompt: "s".into(),
                     text: "МА".into(),
@@ -839,12 +902,13 @@ mod tests {
         assert_eq!(
             stages,
             vec![
+                ExerciseStage::Sound,
                 ExerciseStage::Syllable,
                 ExerciseStage::Word,
                 ExerciseStage::Phrase
             ]
         );
-        assert_eq!(entries[0].label, "МА");
+        assert_eq!(entries[0].label, "А");
     }
 
     #[test]

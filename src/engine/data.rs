@@ -18,6 +18,10 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         bytes: include_bytes!("../../assets/exercises/starter.json"),
     },
     EmbeddedPack {
+        id: "sounds",
+        bytes: include_bytes!("../../assets/exercises/sounds.json"),
+    },
+    EmbeddedPack {
         id: "syllables",
         bytes: include_bytes!("../../assets/exercises/syllables.json"),
     },
@@ -235,13 +239,17 @@ mod tests {
             assert_eq!(pack.title, entry.title);
             assert!(!pack.exercises.is_empty());
         }
-        assert!(list_builtin_packs().len() >= 8);
+        assert!(list_builtin_packs().len() >= 9);
     }
 
     #[test]
     fn starter_pack_loads_and_validates() {
         let pack = load_pack(DEFAULT_PACK_ID).expect("starter.json должен разбираться");
-        assert_eq!(pack.title, "Слоги → слова → фразы");
+        assert_eq!(pack.title, "Звуки → слоги → слова → фразы");
+        assert!(pack
+            .exercises
+            .iter()
+            .any(|e| e.stage() == ExerciseStage::Sound));
         assert!(pack
             .exercises
             .iter()
@@ -262,6 +270,24 @@ mod tests {
         p.pack_id = Some("greetings".into());
         let pack = load_active_pack(&p).unwrap();
         assert_eq!(pack.title, "Приветствия");
+    }
+
+    #[test]
+    fn sounds_pack_starts_with_vowels() {
+        let pack = load_pack("sounds").expect("sounds.json должен разбираться");
+        assert_eq!(pack.title, "Гласные и согласные");
+        assert!(pack
+            .exercises
+            .iter()
+            .any(|e| e.stage() == ExerciseStage::Sound));
+        assert_eq!(
+            pack.exercises
+                .iter()
+                .find(|e| e.stage() == ExerciseStage::Sound)
+                .and_then(|e| e.map_label())
+                .as_deref(),
+            Some("А")
+        );
     }
 
     #[test]

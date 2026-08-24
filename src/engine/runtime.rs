@@ -1250,6 +1250,9 @@ mod tests {
         let mut seen_phrase = false;
         for st in &stages {
             match st {
+                crate::engine::ExerciseStage::Sound => {
+                    panic!("звук отфильтрован уровнем «слоги»");
+                }
                 crate::engine::ExerciseStage::Syllable => {
                     assert!(!seen_word && !seen_phrase);
                 }
@@ -1355,6 +1358,46 @@ mod tests {
             }
         }
         assert_eq!(eng.level(), Some(ExerciseStage::Syllable));
+    }
+
+    #[test]
+    fn diagnosis_weak_sounds_sets_sound_level() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::StartDiagnosis);
+        loop {
+            let Some(ex) = eng.current_exercise().cloned() else {
+                break;
+            };
+            let ok = ex.stage() != ExerciseStage::Sound;
+            match ex {
+                Exercise::ChooseWord { answer, .. } => {
+                    if ok {
+                        eng.handle(Command::Submit(UserAnswer::Choice(answer)));
+                    } else {
+                        eng.handle(Command::Submit(UserAnswer::Choice("__нет__".into())));
+                    }
+                }
+                Exercise::BuildPhrase { answer, .. } => {
+                    let parts: Vec<_> = if ok {
+                        answer.split_whitespace().map(str::to_string).collect()
+                    } else {
+                        vec!["нет".into()]
+                    };
+                    eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
+                }
+                Exercise::ReadAloud { .. } => {
+                    eng.handle(Command::Submit(UserAnswer::ReadDone {
+                        matched: ok,
+                        heard: None,
+                    }));
+                }
+            }
+            eng.handle(Command::AdvanceAfterFeedback);
+            if matches!(eng.screen(), Screen::DiagnosisResult { .. }) {
+                break;
+            }
+        }
+        assert_eq!(eng.level(), Some(ExerciseStage::Sound));
     }
 
     #[test]

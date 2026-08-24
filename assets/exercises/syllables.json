@@ -3,6 +3,20 @@
   "exercises": [
     {
       "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "А",
+      "speak": "а а а"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "М",
+      "speak": "м м м"
+    },
+    {
+      "type": "read_aloud",
       "stage": "syllable",
       "prompt": "Скажите слог",
       "text": "МА",

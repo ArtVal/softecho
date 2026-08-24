@@ -1,6 +1,34 @@
 {
-  "title": "Слоги → слова → фразы",
+  "title": "Звуки → слоги → слова → фразы",
   "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "А",
+      "speak": "а а а"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "О",
+      "speak": "о о о"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "У",
+      "speak": "у у у"
+    },
+    {
+      "type": "choose_word",
+      "stage": "sound",
+      "prompt": "Какой звук написан: А?",
+      "options": ["а", "о", "у", "и"],
+      "answer": "а"
+    },
     {
       "type": "read_aloud",
       "stage": "syllable",

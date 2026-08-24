@@ -1,0 +1,171 @@
+{
+  "title": "Гласные и согласные",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "А",
+      "speak": "а а а"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "О",
+      "speak": "о о о"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "У",
+      "speak": "у у у"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "И",
+      "speak": "и и и"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "Э",
+      "speak": "э э э"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "Ы",
+      "speak": "ы ы ы"
+    },
+    {
+      "type": "choose_word",
+      "stage": "sound",
+      "prompt": "Какой звук написан: А?",
+      "options": ["а", "о", "у", "и"],
+      "answer": "а"
+    },
+    {
+      "type": "choose_word",
+      "stage": "sound",
+      "prompt": "Какой звук написан: У?",
+      "options": ["у", "а", "о", "ы"],
+      "answer": "у"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "М",
+      "speak": "м м м"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "П",
+      "speak": "п п п"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "Б",
+      "speak": "б б б"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "Т",
+      "speak": "т т т"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "Д",
+      "speak": "д д д"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "Н",
+      "speak": "н н н"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "К",
+      "speak": "к к к"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "Л",
+      "speak": "л л л"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "С",
+      "speak": "с с с"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Скажите звук",
+      "text": "В",
+      "speak": "в в в"
+    },
+    {
+      "type": "choose_word",
+      "stage": "sound",
+      "prompt": "Какой звук написан: М?",
+      "options": ["м", "п", "н", "б"],
+      "answer": "м"
+    },
+    {
+      "type": "choose_word",
+      "stage": "sound",
+      "prompt": "Какой звук написан: С?",
+      "options": ["с", "т", "к", "п"],
+      "answer": "с"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "МА",
+      "speak": "ма ма ма"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ПА",
+      "speak": "па па па"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "мама"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Прочитайте фразу",
+      "text": "Мама тут"
+    }
+  ]
+}
