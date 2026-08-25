@@ -1091,6 +1091,14 @@ impl Engine {
             Command::LeaveSpeechMap => {
                 self.screen = Screen::Home;
             }
+            Command::OpenProgress => {
+                self.abort_listen();
+                self.session = None;
+                self.screen = Screen::ProgressReport;
+            }
+            Command::LeaveProgress => {
+                self.screen = Screen::Home;
+            }
             Command::OpenWarmup => {
                 self.abort_listen();
                 self.session = None;
@@ -1281,6 +1289,15 @@ impl Engine {
 
     pub fn speech_map_entries(&self) -> Vec<SpeechMapEntry> {
         pack_speech_entries(&self.pack, &self.progress.speech_map)
+    }
+
+    pub fn progress_report_text(&self) -> String {
+        use super::exercise::format_progress_report;
+        format_progress_report(
+            &self.progress,
+            &self.pack.title,
+            &self.speech_map_entries(),
+        )
     }
 
     pub fn asr_status(&self) -> AsrStatus {
@@ -1634,6 +1651,17 @@ mod tests {
         eng.handle(Command::OpenWarmup);
         assert!(matches!(eng.screen(), Screen::Warmup));
         eng.handle(Command::LeaveWarmup);
+        assert!(matches!(eng.screen(), Screen::Home));
+    }
+
+    #[test]
+    fn open_progress_and_leave() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::OpenProgress);
+        assert!(matches!(eng.screen(), Screen::ProgressReport));
+        let text = eng.progress_report_text();
+        assert!(text.contains("SoftEcho"));
+        eng.handle(Command::LeaveProgress);
         assert!(matches!(eng.screen(), Screen::Home));
     }
 

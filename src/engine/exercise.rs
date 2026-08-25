@@ -567,12 +567,108 @@ pub fn pack_speech_entries(pack: &ExercisePack, map: &SpeechMap) -> Vec<SpeechMa
     out
 }
 
+/// Сводка карты по ступеням (для экрана прогресса).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StageSummary {
+    pub stage: ExerciseStage,
+    pub good: u32,
+    pub almost: u32,
+    pub weak: u32,
+    pub unknown: u32,
+}
+
+pub fn speech_map_stage_summaries(entries: &[SpeechMapEntry]) -> Vec<StageSummary> {
+    let mut out = Vec::new();
+    for stage in ExerciseStage::ALL {
+        let mut s = StageSummary {
+            stage,
+            good: 0,
+            almost: 0,
+            weak: 0,
+            unknown: 0,
+        };
+        let mut any = false;
+        for e in entries.iter().filter(|e| e.stage == stage) {
+            any = true;
+            match e.rating {
+                SpeechRating::Good => s.good += 1,
+                SpeechRating::Almost => s.almost += 1,
+                SpeechRating::Weak => s.weak += 1,
+                SpeechRating::Unknown => s.unknown += 1,
+            }
+        }
+        if any {
+            out.push(s);
+        }
+    }
+    out
+}
+
+/// Короткий текстовый отчёт (скопировать родственнику / логопеду).
+pub fn format_progress_report(
+    progress: &Progress,
+    pack_title: &str,
+    entries: &[SpeechMapEntry],
+) -> String {
+    let mut lines = Vec::new();
+    lines.push("SoftEcho — отчёт о прогрессе".into());
+    lines.push(format!("Набор: {pack_title}"));
+    let level = progress
+        .level
+        .map(|l| l.label_ru().to_string())
+        .unwrap_or_else(|| "не выбран".into());
+    lines.push(format!("Уровень: {level}"));
+    lines.push(format!(
+        "Занятий: {} · верно {}/{}",
+        progress.sessions_completed, progress.total_correct, progress.total_answered
+    ));
+    if let Some(acc) = progress.recent_accuracy() {
+        lines.push(format!(
+            "Тренд (последние {}): {:.0}% верных",
+            progress.session_history.len(),
+            acc * 100.0
+        ));
+    }
+    if !progress.session_history.is_empty() {
+        lines.push("История занятий (старые → новые):".into());
+        for (i, s) in progress.session_history.iter().enumerate() {
+            let pct = if s.total == 0 {
+                0
+            } else {
+                (100 * s.correct) / s.total
+            };
+            lines.push(format!("  {}. {}/{} ({}%)", i + 1, s.correct, s.total, pct));
+        }
+    }
+    lines.push("Карта по ступеням:".into());
+    for s in speech_map_stage_summaries(entries) {
+        lines.push(format!(
+            "  {}: получается {}, почти {}, нужна практика {}, ещё нет {}",
+            s.stage.label_ru(),
+            s.good,
+            s.almost,
+            s.weak,
+            s.unknown
+        ));
+    }
+    let weak: Vec<_> = entries
+        .iter()
+        .filter(|e| e.rating == SpeechRating::Weak)
+        .map(|e| e.label.as_str())
+        .collect();
+    if !weak.is_empty() {
+        lines.push(format!("Слабые места: {}", weak.join(", ")));
+    }
+    lines.push("Не заменяет занятие с логопедом.".into());
+    lines.join("\n")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Progress {
     pub sessions_completed: u32,
     pub total_correct: u32,
     pub total_answered: u32,
-    /// Рабочий уровень (звуки / слоги / слова / фразы). Ставится диагностикой или вручную.
+    /// Рабочий уровень. Ставится диагностикой или вручную.
     #[serde(default)]
     pub level: Option<ExerciseStage>,
     /// Выбранный набор упражнений (`starter`, `daily`, …).
@@ -581,13 +677,30 @@ pub struct Progress {
     /// Локальная карта: что получается по звукам/слогам/словам/фразам.
     #[serde(default)]
     pub speech_map: SpeechMap,
+    /// Хвост последних занятий (для тренда на экране прогресса).
+    #[serde(default)]
+    pub session_history: Vec<SessionRecord>,
 }
+
+/// Одна завершённая практика (не диагностика).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SessionRecord {
+    pub correct: u32,
+    pub total: u32,
+}
+
+const SESSION_HISTORY_MAX: usize = 20;
 
 impl Progress {
     pub fn record_session(&mut self, correct: u32, total: u32) {
         self.sessions_completed += 1;
         self.total_correct += correct;
         self.total_answered += total;
+        self.session_history.push(SessionRecord { correct, total });
+        if self.session_history.len() > SESSION_HISTORY_MAX {
+            let drop_n = self.session_history.len() - SESSION_HISTORY_MAX;
+            self.session_history.drain(..drop_n);
+        }
     }
 
     pub fn set_level(&mut self, level: ExerciseStage) {
@@ -601,6 +714,22 @@ impl Progress {
     pub fn record_speech(&mut self, exercise: &Exercise, correct: bool) {
         if let Some(key) = exercise.map_key() {
             self.speech_map.record(&key, correct);
+        }
+    }
+
+    /// Доля верных по хвосту истории (0…1), если она не пуста.
+    pub fn recent_accuracy(&self) -> Option<f32> {
+        if self.session_history.is_empty() {
+            return None;
+        }
+        let (c, t) = self
+            .session_history
+            .iter()
+            .fold((0u32, 0u32), |(c, t), s| (c + s.correct, t + s.total));
+        if t == 0 {
+            None
+        } else {
+            Some(c as f32 / t as f32)
         }
     }
 }
@@ -866,6 +995,10 @@ mod tests {
         assert_eq!(p.sessions_completed, 2);
         assert_eq!(p.total_correct, 5);
         assert_eq!(p.total_answered, 9);
+        assert_eq!(p.session_history.len(), 2);
+        assert_eq!(p.session_history[0], SessionRecord { correct: 3, total: 5 });
+        let acc = p.recent_accuracy().unwrap();
+        assert!((acc - 5.0 / 9.0).abs() < 0.001);
     }
 
     #[test]

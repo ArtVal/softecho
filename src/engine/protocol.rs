@@ -24,6 +24,8 @@ pub enum Screen {
     },
     /// Карта произнесения по текущему набору.
     SpeechMap,
+    /// Прогресс: тренд занятий, сводка карты, повторная диагностика.
+    ProgressReport,
     /// Разминка: схемы + ссылки на внешние видео (не упражнение).
     Warmup,
     Dictaphone,
@@ -54,6 +56,9 @@ pub enum Command {
     LeaveLevelPick,
     OpenSpeechMap,
     LeaveSpeechMap,
+    /// Отчёт о прогрессе (тренд + сводка + повторная диагностика).
+    OpenProgress,
+    LeaveProgress,
     /// Разминка перед занятием (схемы + внешние ссылки).
     OpenWarmup,
     LeaveWarmup,

@@ -4,6 +4,7 @@ use crate::engine::{
     AsrStatus, CheckResult, Command, Engine, Exercise, ExerciseStage, ModelDownloadState, Screen,
     SpeechRating, UserAnswer,
 };
+use crate::engine::exercise::speech_map_stage_summaries;
 use crate::engine::warmup::{WARMUP_LINKS, WARMUP_SCHEMAS};
 use crate::ui::theme::apply_theme;
 use crate::ui::widgets::{back_to_menu_button, big_button, footer_buttons, screen_scroll, str_byte_tail};
@@ -64,6 +65,9 @@ impl eframe::App for UiApp {
                 }
                 Screen::SpeechMap => {
                     screen_scroll(ui, "speech_map", |ui| self.ui_speech_map(ui))
+                }
+                Screen::ProgressReport => {
+                    screen_scroll(ui, "progress", |ui| self.ui_progress_report(ui))
                 }
                 Screen::Warmup => screen_scroll(ui, "warmup", |ui| self.ui_warmup(ui)),
                 Screen::Dictaphone => self.ui_dictaphone(ui),
@@ -138,6 +142,10 @@ impl UiApp {
             ui.add_space(12.0);
             if big_button(ui, "Разминка", Color32::from_rgb(70, 120, 100)).clicked() {
                 self.engine.handle(Command::OpenWarmup);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Прогресс", Color32::from_rgb(100, 80, 150)).clicked() {
+                self.engine.handle(Command::OpenProgress);
             }
             ui.add_space(12.0);
             if matches!(self.engine.asr_status(), AsrStatus::Ready) {
@@ -331,6 +339,161 @@ impl UiApp {
         });
     }
 
+    fn ui_progress_report(&mut self, ui: &mut egui::Ui) {
+        let progress = self.engine.progress().clone();
+        let pack_title = self.engine.pack().title.clone();
+        let entries = self.engine.speech_map_entries();
+        let summaries = speech_map_stage_summaries(&entries);
+        let report = self.engine.progress_report_text();
+
+        ui.vertical_centered(|ui| {
+            ui.add_space(16.0);
+            ui.label(
+                RichText::new("Прогресс")
+                    .font(FontId::proportional(36.0))
+                    .strong(),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(format!("Набор: {pack_title}"))
+                    .font(FontId::proportional(18.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            let level_text = match progress.level {
+                Some(l) => l.label_ru().to_string(),
+                None => "не выбран".into(),
+            };
+            ui.label(
+                RichText::new(format!("Уровень: {level_text}"))
+                    .font(FontId::proportional(20.0))
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(format!(
+                    "Всего занятий: {} · верно {}/{}",
+                    progress.sessions_completed, progress.total_correct, progress.total_answered
+                ))
+                .font(FontId::proportional(18.0)),
+            );
+
+            ui.add_space(20.0);
+            ui.label(
+                RichText::new("Тренд занятий")
+                    .font(FontId::proportional(24.0))
+                    .strong()
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
+            ui.add_space(8.0);
+            if progress.session_history.is_empty() {
+                ui.label(
+                    RichText::new("Пока нет завершённых занятий — пройдите урок.")
+                        .font(FontId::proportional(17.0))
+                        .color(Color32::DARK_GRAY),
+                );
+            } else {
+                if let Some(acc) = progress.recent_accuracy() {
+                    ui.label(
+                        RichText::new(format!(
+                            "Последние {}: {:.0}% верных",
+                            progress.session_history.len(),
+                            acc * 100.0
+                        ))
+                        .font(FontId::proportional(18.0)),
+                    );
+                    ui.add_space(8.0);
+                }
+                for (i, s) in progress.session_history.iter().enumerate() {
+                    let pct = if s.total == 0 {
+                        0
+                    } else {
+                        (100 * s.correct) / s.total
+                    };
+                    let bar_n = (pct / 10).min(10) as usize;
+                    let bar = "█".repeat(bar_n) + &"░".repeat(10 - bar_n);
+                    ui.label(
+                        RichText::new(format!(
+                            "{}. {}/{} ({}%)  {bar}",
+                            i + 1,
+                            s.correct,
+                            s.total,
+                            pct
+                        ))
+                        .font(FontId::monospace(16.0))
+                        .color(Color32::from_rgb(20, 40, 60)),
+                    );
+                    ui.add_space(2.0);
+                }
+            }
+
+            ui.add_space(20.0);
+            ui.label(
+                RichText::new("Карта по ступеням")
+                    .font(FontId::proportional(24.0))
+                    .strong()
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
+            ui.add_space(8.0);
+            if summaries.is_empty() {
+                ui.label(
+                    RichText::new("В наборе пока нет целей для карты.")
+                        .font(FontId::proportional(17.0))
+                        .color(Color32::DARK_GRAY),
+                );
+            } else {
+                for s in &summaries {
+                    ui.label(
+                        RichText::new(format!(
+                            "{}: получается {}, почти {}, практика {}, ещё нет {}",
+                            s.stage.label_ru(),
+                            s.good,
+                            s.almost,
+                            s.weak,
+                            s.unknown
+                        ))
+                        .font(FontId::proportional(17.0))
+                        .color(Color32::from_rgb(30, 50, 70)),
+                    );
+                    ui.add_space(4.0);
+                }
+            }
+
+            let weak: Vec<_> = entries
+                .iter()
+                .filter(|e| e.rating == SpeechRating::Weak)
+                .map(|e| e.label.as_str())
+                .collect();
+            if !weak.is_empty() {
+                ui.add_space(12.0);
+                ui.label(
+                    RichText::new(format!("Слабые: {}", weak.join(", ")))
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::from_rgb(140, 70, 50)),
+                );
+            }
+
+            ui.add_space(24.0);
+            if big_button(ui, "Повторная диагностика", Color32::from_rgb(40, 130, 90)).clicked()
+            {
+                self.engine.handle(Command::StartDiagnosis);
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Карта произнесения", Color32::from_rgb(100, 80, 150)).clicked()
+            {
+                self.engine.handle(Command::OpenSpeechMap);
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Скопировать отчёт", Color32::from_rgb(60, 100, 140)).clicked() {
+                ui.ctx().copy_text(report);
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::LeaveProgress);
+            }
+            ui.add_space(20.0);
+        });
+    }
+
     fn ui_warmup(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             ui.add_space(20.0);
@@ -502,6 +665,10 @@ impl UiApp {
             ui.add_space(8.0);
             if big_button(ui, "Разминка", Color32::from_rgb(70, 120, 100)).clicked() {
                 self.engine.handle(Command::OpenWarmup);
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Прогресс", Color32::from_rgb(100, 80, 150)).clicked() {
+                self.engine.handle(Command::OpenProgress);
             }
             ui.add_space(8.0);
             ui.label(
