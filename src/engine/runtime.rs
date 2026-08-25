@@ -351,6 +351,11 @@ impl Engine {
     }
 
     fn start_session(&mut self) {
+        if self.progress.level.is_none() && self.progress.simple_mode {
+            // В упрощённом режиме без уровня начинаем со звуков — без экрана выбора.
+            self.progress.set_level(ExerciseStage::Sound);
+            self.persist_progress();
+        }
         let Some(level) = self.progress.level else {
             self.screen = Screen::LevelPick;
             return;
@@ -1309,6 +1314,10 @@ impl Engine {
                 self.set_level(level);
             }
             Command::SetLanguage(language) => self.set_language(language),
+            Command::SetSimpleMode(on) => {
+                self.progress.set_simple_mode(on);
+                self.persist_progress();
+            }
             Command::OpenDictaphone => {
                 self.abort_listen();
                 self.dictaphone = DictaphoneState::default();
@@ -1396,6 +1405,10 @@ impl Engine {
 
     pub fn language(&self) -> AppLanguage {
         self.progress.language
+    }
+
+    pub fn simple_mode(&self) -> bool {
+        self.progress.simple_mode
     }
 
     pub fn ui_text(&self) -> UiText {
@@ -2167,6 +2180,17 @@ mod tests {
         let mut tick = TickResult::default();
         eng.poll_model_download(&mut tick);
         assert!(matches!(eng.model_download(), ModelDownloadState::Idle));
+    }
+
+    #[test]
+    fn simple_mode_starts_sound_without_level() {
+        let mut eng = Engine::new_logic_only();
+        eng.progress.level = None;
+        eng.handle(Command::SetSimpleMode(true));
+        assert!(eng.simple_mode());
+        eng.handle(Command::StartSession);
+        assert_eq!(eng.level(), Some(ExerciseStage::Sound));
+        assert!(matches!(eng.screen(), Screen::Exercise));
     }
 
     #[test]

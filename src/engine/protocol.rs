@@ -81,6 +81,8 @@ pub enum Command {
     SetLevel(ExerciseStage),
     /// Язык UI / наборов / модели Vosk.
     SetLanguage(crate::engine::i18n::AppLanguage),
+    /// Упрощённый режим (крупный UI + подсказки).
+    SetSimpleMode(bool),
     OpenDictaphone,
     OpenSettings,
     LeaveSettings,

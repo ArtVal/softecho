@@ -131,6 +131,38 @@ impl Exercise {
             }
         }
     }
+
+    /// Короткая подсказка для упрощённого режима (первая буква / слог).
+    pub fn speech_cue(&self) -> Option<String> {
+        match self {
+            Self::ReadAloud { text, speak, .. } => {
+                let raw = speak.as_deref().unwrap_or(text.as_str());
+                cue_from_text(raw)
+            }
+            Self::ChooseWord { answer, .. } | Self::BuildPhrase { answer, .. } => {
+                cue_from_text(answer)
+            }
+        }
+    }
+}
+
+/// Первая буква или короткий зачин цели («ма…», «А»).
+pub fn cue_from_text(text: &str) -> Option<String> {
+    let norm = normalize_phrase(text);
+    let first_word = norm.split_whitespace().next().unwrap_or("");
+    if first_word.is_empty() {
+        return None;
+    }
+    let chars: Vec<char> = first_word.chars().collect();
+    if chars.len() == 1 {
+        return Some(chars[0].to_uppercase().to_string());
+    }
+    if chars.len() <= 3 {
+        let mut s: String = chars.iter().take(2).collect();
+        s.push('…');
+        return Some(s);
+    }
+    Some(format!("{}…", chars[0].to_uppercase()))
 }
 
 fn split_by_stage(exercises: Vec<Exercise>) -> Vec<Vec<Exercise>> {
@@ -690,6 +722,9 @@ pub struct Progress {
     /// Язык интерфейса / наборов / модели Vosk.
     #[serde(default)]
     pub language: crate::engine::i18n::AppLanguage,
+    /// Упрощённый режим: крупный UI, меньше пунктов меню, подсказки в заданиях.
+    #[serde(default)]
+    pub simple_mode: bool,
 }
 
 /// Одна завершённая практика (не диагностика).
@@ -723,6 +758,10 @@ impl Progress {
 
     pub fn set_language(&mut self, language: crate::engine::i18n::AppLanguage) {
         self.language = language;
+    }
+
+    pub fn set_simple_mode(&mut self, on: bool) {
+        self.simple_mode = on;
     }
 
     pub fn record_speech(&mut self, exercise: &Exercise, correct: bool) {
@@ -768,6 +807,14 @@ mod tests {
         assert!(speech_matches("а а а", "а"));
         assert!(speech_matches("м м м", "эм"));
         assert!(!speech_matches("м м м", "пэ"));
+    }
+
+    #[test]
+    fn cue_from_text_short_and_long() {
+        assert_eq!(cue_from_text("а").as_deref(), Some("А"));
+        assert_eq!(cue_from_text("ма").as_deref(), Some("ма…"));
+        assert_eq!(cue_from_text("мама").as_deref(), Some("М…"));
+        assert_eq!(cue_from_text("ма ма ма").as_deref(), Some("ма…"));
     }
 
     #[test]

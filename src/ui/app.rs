@@ -7,7 +7,7 @@ use crate::engine::{
 use crate::engine::exercise::speech_map_stage_summaries;
 use crate::engine::i18n::{rating_label, stage_label};
 use crate::engine::warmup::{WARMUP_LINKS, WARMUP_SCHEMAS};
-use crate::ui::theme::apply_theme;
+use crate::ui::theme::{apply_theme, apply_theme_scale};
 use crate::ui::widgets::{back_to_menu_button, big_button, footer_buttons, screen_scroll, str_byte_tail};
 
 use eframe::egui::{self, Color32, FontId, OpenUrl, RichText};
@@ -42,6 +42,10 @@ impl UiApp {
 
 impl eframe::App for UiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let scale = if self.engine.simple_mode() { 1.35 } else { 1.0 };
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("softecho_ui_scale"), scale));
+        apply_theme_scale(ctx, scale);
+
         let tick = self.engine.tick();
         if tick.want_repaint {
             ctx.request_repaint();
@@ -163,28 +167,32 @@ impl UiApp {
                 self.engine.handle(Command::StartSession);
             }
             ui.add_space(12.0);
-            if big_button(ui, t.t("diagnosis"), Color32::from_rgb(40, 130, 90)).clicked() {
-                self.engine.handle(Command::StartDiagnosis);
+            if !self.engine.simple_mode() {
+                if big_button(ui, t.t("diagnosis"), Color32::from_rgb(40, 130, 90)).clicked() {
+                    self.engine.handle(Command::StartDiagnosis);
+                }
+                ui.add_space(12.0);
             }
-            ui.add_space(12.0);
             if big_button(ui, t.t("warmup"), Color32::from_rgb(70, 120, 100)).clicked() {
                 self.engine.handle(Command::OpenWarmup);
             }
-            ui.add_space(12.0);
-            if big_button(ui, t.t("progress"), Color32::from_rgb(100, 80, 150)).clicked() {
-                self.engine.handle(Command::OpenProgress);
-            }
-            ui.add_space(12.0);
-            if matches!(self.engine.asr_status(), AsrStatus::Ready) {
-                if big_button(ui, t.t("dictaphone"), Color32::from_rgb(140, 60, 100)).clicked() {
-                    self.engine.handle(Command::OpenDictaphone);
+            if !self.engine.simple_mode() {
+                ui.add_space(12.0);
+                if big_button(ui, t.t("progress"), Color32::from_rgb(100, 80, 150)).clicked() {
+                    self.engine.handle(Command::OpenProgress);
                 }
-            } else {
-                ui.label(
-                    RichText::new(t.t("dictaphone_need_asr"))
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::DARK_GRAY),
-                );
+                ui.add_space(12.0);
+                if matches!(self.engine.asr_status(), AsrStatus::Ready) {
+                    if big_button(ui, t.t("dictaphone"), Color32::from_rgb(140, 60, 100)).clicked() {
+                        self.engine.handle(Command::OpenDictaphone);
+                    }
+                } else {
+                    ui.label(
+                        RichText::new(t.t("dictaphone_need_asr"))
+                            .font(FontId::proportional(16.0))
+                            .color(Color32::DARK_GRAY),
+                    );
+                }
             }
             ui.add_space(24.0);
             if big_button(ui, t.t("settings"), Color32::from_rgb(90, 100, 120)).clicked() {
@@ -946,6 +954,37 @@ impl UiApp {
 
             ui.add_space(24.0);
             ui.label(
+                RichText::new(t.t("simple_mode"))
+                    .font(FontId::proportional(22.0))
+                    .strong()
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(t.t("simple_mode_hint"))
+                    .font(FontId::proportional(15.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(12.0);
+            {
+                let on = self.engine.simple_mode();
+                let label = if on {
+                    format!("{} · {}", t.t("simple_mode"), t.t("simple_on"))
+                } else {
+                    format!("{} · {}", t.t("simple_mode"), t.t("simple_off"))
+                };
+                let fill = if on {
+                    Color32::from_rgb(40, 130, 90)
+                } else {
+                    Color32::from_rgb(90, 100, 120)
+                };
+                if big_button(ui, &label, fill).clicked() {
+                    self.engine.handle(Command::SetSimpleMode(!on));
+                }
+            }
+
+            ui.add_space(24.0);
+            ui.label(
                 RichText::new(t.t("pack_and_level"))
                     .font(FontId::proportional(22.0))
                     .strong()
@@ -1165,6 +1204,20 @@ impl UiApp {
                     .font(FontId::proportional(28.0))
                     .strong(),
             );
+            if self.engine.simple_mode() {
+                if let Some(cue) = exercise.speech_cue() {
+                    ui.add_space(10.0);
+                    ui.label(
+                        RichText::new(format!(
+                            "{} «{}»",
+                            self.engine.ui_text().t("cue_prefix"),
+                            cue
+                        ))
+                        .font(FontId::proportional(24.0))
+                        .color(Color32::from_rgb(40, 100, 70)),
+                    );
+                }
+            }
             ui.add_space(24.0);
         });
 

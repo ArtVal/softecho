@@ -14,9 +14,24 @@ pub fn str_byte_tail(s: &str, max_bytes: usize) -> &str {
 }
 
 pub fn big_button(ui: &mut egui::Ui, label: &str, fill: Color32) -> egui::Response {
-    let width = ui.available_width().clamp(200.0, 280.0);
-    let height = if ui.available_width() < 520.0 { 52.0 } else { 56.0 };
-    let font_size = if ui.available_width() < 520.0 { 20.0 } else { 24.0 };
+    let scale = ui
+        .ctx()
+        .data(|d| d.get_temp::<f32>(egui::Id::new("softecho_ui_scale")))
+        .unwrap_or(1.0);
+    big_button_scaled(ui, label, fill, scale)
+}
+
+pub fn big_button_scaled(
+    ui: &mut egui::Ui,
+    label: &str,
+    fill: Color32,
+    scale: f32,
+) -> egui::Response {
+    let scale = scale.clamp(1.0, 1.6);
+    let width = (ui.available_width().clamp(200.0, 280.0) * scale.min(1.25)).min(ui.available_width());
+    let narrow = ui.available_width() < 520.0;
+    let height = if narrow { 52.0 } else { 56.0 } * scale;
+    let font_size = if narrow { 20.0 } else { 24.0 } * scale;
     let text = RichText::new(label)
         .font(FontId::proportional(font_size))
         .color(Color32::WHITE);

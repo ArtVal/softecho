@@ -494,6 +494,21 @@ pub fn tr(lang: AppLanguage, key: &str) -> &'static str {
         (AppLanguage::Ru, "err_zip_bad") => "Повреждённый архив",
         (AppLanguage::En, "err_zip_bad") => "Corrupt archive",
 
+        (AppLanguage::Ru, "simple_mode") => "Упрощённый режим",
+        (AppLanguage::En, "simple_mode") => "Simple mode",
+        (AppLanguage::Ru, "simple_mode_hint") => {
+            "Крупный текст и кнопки, меньше пунктов меню, подсказки в заданиях. Без уровня — старт со звуков."
+        }
+        (AppLanguage::En, "simple_mode_hint") => {
+            "Larger text and buttons, fewer menu items, exercise cues. No level set — start from sounds."
+        }
+        (AppLanguage::Ru, "simple_on") => "Включён",
+        (AppLanguage::En, "simple_on") => "On",
+        (AppLanguage::Ru, "simple_off") => "Выключен",
+        (AppLanguage::En, "simple_off") => "Off",
+        (AppLanguage::Ru, "cue_prefix") => "Подсказка: начните с",
+        (AppLanguage::En, "cue_prefix") => "Hint: start with",
+
         _ => "???",
     }
 }
