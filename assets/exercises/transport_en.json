@@ -1,0 +1,109 @@
+{
+  "title": "Transport",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "BUS",
+      "speak": "bus bus"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "CAR",
+      "speak": "car car"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What runs on rails?",
+      "options": [
+        "train",
+        "boat",
+        "plane",
+        "bike"
+      ],
+      "answer": "train"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What flies?",
+      "options": [
+        "plane",
+        "bus",
+        "ship",
+        "tram"
+      ],
+      "answer": "plane"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Where do you buy a ticket?",
+      "options": [
+        "ticket office",
+        "kitchen",
+        "bed",
+        "window"
+      ],
+      "answer": "ticket office"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "bus"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "car"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "metro"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": [
+        "I",
+        "am",
+        "going",
+        "home"
+      ],
+      "answer": "I am going home"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": [
+        "Where",
+        "is",
+        "the",
+        "bus"
+      ],
+      "answer": "Where is the bus"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "I am at the station"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "Please stop here"
+    }
+  ]
+}

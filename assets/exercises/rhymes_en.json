@@ -1,0 +1,115 @@
+{
+  "title": "Simple rhymes",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "LA",
+      "speak": "la la la"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "BA",
+      "speak": "ba ba ba"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "rain"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "train"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "rain rain go away"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "tick tock goes the clock"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "one two buckle my shoe"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "drip drop drip drop"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "hop hop little frog"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "clap clap clap your hands"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "soft and slow we go"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "red and blue and green"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "up and down around the town"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "step by step we walk"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "hum hum hummingbird"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "light and bright at night"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "tea for two and me"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the rhyme slowly",
+      "text": "now and then again"
+    }
+  ]
+}

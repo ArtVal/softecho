@@ -1,0 +1,90 @@
+{
+  "title": "Body",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "HAND",
+      "speak": "hand hand"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "FOOT",
+      "speak": "foot foot"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "hand"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "foot"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "head"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "eye"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What do we see with?",
+      "options": [
+        "eye",
+        "ear",
+        "table",
+        "tea"
+      ],
+      "answer": "eye"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What do we breathe with?",
+      "options": [
+        "nose",
+        "hand",
+        "window",
+        "spoon"
+      ],
+      "answer": "nose"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": [
+        "My",
+        "head",
+        "hurts"
+      ],
+      "answer": "My head hurts"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "Raise your hand"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "Open your mouth"
+    }
+  ]
+}

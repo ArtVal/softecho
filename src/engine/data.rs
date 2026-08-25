@@ -87,6 +87,11 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         bytes: include_bytes!("../../assets/exercises/rhymes.json"),
     },
     EmbeddedPack {
+        id: "rhymes_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/rhymes_en.json"),
+    },
+    EmbeddedPack {
         id: "twisters",
         language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/twisters.json"),
@@ -132,6 +137,11 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         bytes: include_bytes!("../../assets/exercises/body.json"),
     },
     EmbeddedPack {
+        id: "body_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/body_en.json"),
+    },
+    EmbeddedPack {
         id: "food",
         language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/food.json"),
@@ -145,6 +155,11 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         id: "transport",
         language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/transport.json"),
+    },
+    EmbeddedPack {
+        id: "transport_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/transport_en.json"),
     },
     EmbeddedPack {
         id: "pictures",
@@ -548,7 +563,7 @@ mod tests {
             assert_eq!(pack.title, entry.title);
             assert!(!pack.exercises.is_empty());
         }
-        assert!(list_all_packs().len() >= 23);
+        assert!(list_all_packs().len() >= 26);
         assert!(
             list_packs_for(Some(AppLanguage::Ru))
                 .iter()
@@ -561,7 +576,10 @@ mod tests {
         assert!(en.iter().any(|e| e.id == "sounds_en"));
         assert!(en.iter().any(|e| e.id == "daily_en"));
         assert!(en.iter().any(|e| e.id == "twisters_en"));
-        assert!(en.len() >= 10);
+        assert!(en.iter().any(|e| e.id == "body_en"));
+        assert!(en.iter().any(|e| e.id == "transport_en"));
+        assert!(en.iter().any(|e| e.id == "rhymes_en"));
+        assert!(en.len() >= 13);
         assert!(!en.iter().any(|e| e.id == "daily"));
     }
 
