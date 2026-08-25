@@ -458,12 +458,11 @@ pub enum SpeechRating {
 
 impl SpeechRating {
     pub fn label_ru(self) -> &'static str {
-        match self {
-            Self::Unknown => "ещё не пробовали",
-            Self::Good => "получается",
-            Self::Almost => "почти",
-            Self::Weak => "нужна практика",
-        }
+        super::i18n::rating_label(super::i18n::AppLanguage::Ru, self)
+    }
+
+    pub fn label(self, lang: super::i18n::AppLanguage) -> &'static str {
+        super::i18n::rating_label(lang, self)
     }
 }
 
@@ -609,28 +608,36 @@ pub fn format_progress_report(
     progress: &Progress,
     pack_title: &str,
     entries: &[SpeechMapEntry],
+    language: super::i18n::AppLanguage,
 ) -> String {
+    use super::i18n::{rating_label, stage_label, tr};
     let mut lines = Vec::new();
-    lines.push("SoftEcho — отчёт о прогрессе".into());
-    lines.push(format!("Набор: {pack_title}"));
+    lines.push(tr(language, "report_title").into());
+    lines.push(format!("{}: {pack_title}", tr(language, "pack")));
     let level = progress
         .level
-        .map(|l| l.label_ru().to_string())
-        .unwrap_or_else(|| "не выбран".into());
-    lines.push(format!("Уровень: {level}"));
+        .map(|l| stage_label(language, l).to_string())
+        .unwrap_or_else(|| tr(language, "level_none").into());
+    lines.push(format!("{}: {level}", tr(language, "level")));
     lines.push(format!(
-        "Занятий: {} · верно {}/{}",
-        progress.sessions_completed, progress.total_correct, progress.total_answered
+        "{}: {} · {} {}/{}",
+        tr(language, "sessions"),
+        progress.sessions_completed,
+        tr(language, "correct_count"),
+        progress.total_correct,
+        progress.total_answered
     ));
     if let Some(acc) = progress.recent_accuracy() {
         lines.push(format!(
-            "Тренд (последние {}): {:.0}% верных",
+            "{} {}): {:.0}{}",
+            tr(language, "report_trend"),
             progress.session_history.len(),
-            acc * 100.0
+            acc * 100.0,
+            tr(language, "trend_pct")
         ));
     }
     if !progress.session_history.is_empty() {
-        lines.push("История занятий (старые → новые):".into());
+        lines.push(tr(language, "report_history").into());
         for (i, s) in progress.session_history.iter().enumerate() {
             let pct = if s.total == 0 {
                 0
@@ -640,15 +647,15 @@ pub fn format_progress_report(
             lines.push(format!("  {}. {}/{} ({}%)", i + 1, s.correct, s.total, pct));
         }
     }
-    lines.push("Карта по ступеням:".into());
+    lines.push(format!("{}:", tr(language, "map_by_stage")));
     for s in speech_map_stage_summaries(entries) {
         lines.push(format!(
-            "  {}: получается {}, почти {}, нужна практика {}, ещё нет {}",
-            s.stage.label_ru(),
-            s.good,
-            s.almost,
-            s.weak,
-            s.unknown
+            "  {}: {}, {}, {}, {}",
+            stage_label(language, s.stage),
+            format!("{} {}", rating_label(language, SpeechRating::Good), s.good),
+            format!("{} {}", rating_label(language, SpeechRating::Almost), s.almost),
+            format!("{} {}", rating_label(language, SpeechRating::Weak), s.weak),
+            format!("{} {}", rating_label(language, SpeechRating::Unknown), s.unknown),
         ));
     }
     let weak: Vec<_> = entries
@@ -657,9 +664,9 @@ pub fn format_progress_report(
         .map(|e| e.label.as_str())
         .collect();
     if !weak.is_empty() {
-        lines.push(format!("Слабые места: {}", weak.join(", ")));
+        lines.push(format!("{}: {}", tr(language, "weak_places"), weak.join(", ")));
     }
-    lines.push("Не заменяет занятие с логопедом.".into());
+    lines.push(tr(language, "report_disclaimer").into());
     lines.join("\n")
 }
 

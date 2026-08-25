@@ -4,14 +4,17 @@
 /// Одна схема (крупный текст / псевдорисунок).
 #[derive(Debug, Clone, Copy)]
 pub struct WarmupSchema {
+    #[allow(dead_code)]
     pub title: &'static str,
     pub diagram: &'static str,
+    #[allow(dead_code)]
     pub how: &'static str,
 }
 
 /// Ссылка «смотреть снаружи» (чужой ролик — не вшивать).
 #[derive(Debug, Clone, Copy)]
 pub struct WarmupLink {
+    #[allow(dead_code)]
     pub label: &'static str,
     pub url: &'static str,
 }

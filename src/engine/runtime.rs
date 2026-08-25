@@ -1504,6 +1504,7 @@ impl Engine {
             &self.progress,
             &self.pack.title,
             &self.speech_map_entries(),
+            self.progress.language,
         )
     }
 
