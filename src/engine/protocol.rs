@@ -24,6 +24,8 @@ pub enum Screen {
     },
     /// Карта произнесения по текущему набору.
     SpeechMap,
+    /// Разминка: схемы + ссылки на внешние видео (не упражнение).
+    Warmup,
     Dictaphone,
     Settings,
     Result {
@@ -52,6 +54,9 @@ pub enum Command {
     LeaveLevelPick,
     OpenSpeechMap,
     LeaveSpeechMap,
+    /// Разминка перед занятием (схемы + внешние ссылки).
+    OpenWarmup,
+    LeaveWarmup,
     /// Ручная установка уровня (сохраняется локально).
     SetLevel(ExerciseStage),
     OpenDictaphone,

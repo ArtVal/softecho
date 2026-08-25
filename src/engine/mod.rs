@@ -16,6 +16,7 @@ pub mod runtime;
 #[cfg(feature = "asr")]
 pub mod vosk_runtime;
 pub mod vosk_download;
+pub mod warmup;
 
 pub use asr::AsrStatus;
 pub use exercise::{CheckResult, Exercise, ExerciseStage, SpeechRating, UserAnswer};

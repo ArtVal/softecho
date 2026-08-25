@@ -1071,6 +1071,14 @@ impl Engine {
             Command::LeaveSpeechMap => {
                 self.screen = Screen::Home;
             }
+            Command::OpenWarmup => {
+                self.abort_listen();
+                self.session = None;
+                self.screen = Screen::Warmup;
+            }
+            Command::LeaveWarmup => {
+                self.screen = Screen::Home;
+            }
             Command::SetLevel(level) => {
                 self.abort_listen();
                 self.set_level(level);
@@ -1584,6 +1592,15 @@ mod tests {
         assert!(matches!(eng.screen(), Screen::SpeechMap));
         assert!(!eng.speech_map_entries().is_empty());
         eng.handle(Command::LeaveSpeechMap);
+        assert!(matches!(eng.screen(), Screen::Home));
+    }
+
+    #[test]
+    fn open_warmup_and_leave() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::OpenWarmup);
+        assert!(matches!(eng.screen(), Screen::Warmup));
+        eng.handle(Command::LeaveWarmup);
         assert!(matches!(eng.screen(), Screen::Home));
     }
 

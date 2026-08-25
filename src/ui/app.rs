@@ -4,10 +4,11 @@ use crate::engine::{
     AsrStatus, CheckResult, Command, Engine, Exercise, ExerciseStage, ModelDownloadState, Screen,
     SpeechRating, UserAnswer,
 };
+use crate::engine::warmup::{WARMUP_LINKS, WARMUP_SCHEMAS};
 use crate::ui::theme::apply_theme;
 use crate::ui::widgets::{back_to_menu_button, big_button, footer_buttons, screen_scroll, str_byte_tail};
 
-use eframe::egui::{self, Color32, FontId, RichText};
+use eframe::egui::{self, Color32, FontId, OpenUrl, RichText};
 
 pub struct UiApp {
     engine: Engine,
@@ -64,6 +65,7 @@ impl eframe::App for UiApp {
                 Screen::SpeechMap => {
                     screen_scroll(ui, "speech_map", |ui| self.ui_speech_map(ui))
                 }
+                Screen::Warmup => screen_scroll(ui, "warmup", |ui| self.ui_warmup(ui)),
                 Screen::Dictaphone => self.ui_dictaphone(ui),
                 Screen::Settings => screen_scroll(ui, "settings", |ui| self.ui_settings(ui)),
                 Screen::Result { correct, total, unique } => {
@@ -132,6 +134,10 @@ impl UiApp {
             ui.add_space(12.0);
             if big_button(ui, "Экспресс-диагностика", Color32::from_rgb(40, 130, 90)).clicked() {
                 self.engine.handle(Command::StartDiagnosis);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "Разминка", Color32::from_rgb(70, 120, 100)).clicked() {
+                self.engine.handle(Command::OpenWarmup);
             }
             ui.add_space(12.0);
             if matches!(self.engine.asr_status(), AsrStatus::Ready) {
@@ -314,6 +320,89 @@ impl UiApp {
         });
     }
 
+    fn ui_warmup(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            ui.add_space(20.0);
+            ui.label(
+                RichText::new("Разминка")
+                    .font(FontId::proportional(36.0))
+                    .strong(),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(
+                    "Перед занятием: губы, язык, выдох. Это не проверка — только подготовка.",
+                )
+                .font(FontId::proportional(18.0))
+                .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(20.0);
+
+            for schema in WARMUP_SCHEMAS {
+                ui.label(
+                    RichText::new(schema.title)
+                        .font(FontId::proportional(26.0))
+                        .strong()
+                        .color(Color32::from_rgb(40, 70, 100)),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(schema.diagram)
+                        .font(FontId::monospace(18.0))
+                        .color(Color32::from_rgb(20, 40, 60)),
+                );
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(schema.how)
+                        .font(FontId::proportional(18.0))
+                        .color(Color32::from_rgb(50, 70, 90)),
+                );
+                ui.add_space(20.0);
+            }
+
+            ui.label(
+                RichText::new("Видео снаружи (откроется в браузере)")
+                    .font(FontId::proportional(22.0))
+                    .strong()
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new("Чужие ролики — смотреть можно, в приложение не вшиваем.")
+                    .font(FontId::proportional(15.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(12.0);
+
+            for link in WARMUP_LINKS {
+                if big_button(ui, link.label, Color32::from_rgb(60, 100, 140)).clicked() {
+                    ui.ctx().open_url(OpenUrl::new_tab(link.url));
+                }
+                ui.add_space(8.0);
+            }
+
+            ui.add_space(16.0);
+            ui.label(
+                RichText::new("После схем удобно набор «Артикуляция: па-та-ка».")
+                    .font(FontId::proportional(16.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(12.0);
+            if big_button(ui, "Открыть па-та-ка", Color32::from_rgb(40, 130, 90)).clicked() {
+                self.engine.handle(Command::SetPack("odk".into()));
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Начать занятие", Color32::from_rgb(40, 110, 180)).clicked() {
+                self.engine.handle(Command::StartSession);
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::LeaveWarmup);
+            }
+            ui.add_space(24.0);
+        });
+    }
+
     fn ui_diagnosis_result(&mut self, ui: &mut egui::Ui, level: ExerciseStage) {
         ui.vertical_centered(|ui| {
             ui.add_space(40.0);
@@ -398,6 +487,10 @@ impl UiApp {
             .clicked()
             {
                 self.engine.handle(Command::OpenSpeechMap);
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Разминка", Color32::from_rgb(70, 120, 100)).clicked() {
+                self.engine.handle(Command::OpenWarmup);
             }
             ui.add_space(8.0);
             ui.label(
