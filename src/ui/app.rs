@@ -22,9 +22,11 @@ pub struct UiApp {
 impl UiApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         apply_theme(&cc.egui_ctx);
+        let engine = Engine::new();
+        let editor_prompt = engine.ui_text().t("editor_prompt_default").into();
         Self {
-            engine: Engine::new(),
-            editor_prompt: "Скажите".into(),
+            engine,
+            editor_prompt,
             editor_text: String::new(),
             editor_stage: ExerciseStage::Word,
         }

@@ -220,6 +220,10 @@ impl Engine {
         }
         self.abort_listen();
         self.session = None;
+        // Сбросить загрузку прошлой модели: иначе старый поток держит канал.
+        self.model_download_rx = None;
+        self.model_download = ModelDownloadState::Idle;
+        self.model_download_note = None;
         self.progress.set_language(language);
         let fallback = language.default_pack_id();
         let current = self.pack_id().to_string();
@@ -234,8 +238,6 @@ impl Engine {
             }
         }
         self.reload_recognizer();
-        self.model_download = ModelDownloadState::Idle;
-        self.model_download_note = None;
         self.persist_progress();
     }
 
@@ -247,7 +249,8 @@ impl Engine {
             return;
         }
         if matches!(self.asr_status(), AsrStatus::Ready) {
-            self.model_download_note = Some("Модель уже установлена.".into());
+            self.model_download_note =
+                Some(super::i18n::tr(self.progress.language, "model_installed").into());
             return;
         }
 
@@ -263,7 +266,7 @@ impl Engine {
         let (tx, rx) = mpsc::channel();
         self.model_download_rx = Some(rx);
         self.model_download = ModelDownloadState::Working {
-            label: "Подготовка…".into(),
+            label: super::i18n::tr(language, "download_prepare").into(),
             percent: None,
         };
         self.model_download_note = None;
@@ -2145,6 +2148,25 @@ mod tests {
         eng.handle(Command::SetLanguage(AppLanguage::Ru));
         assert_eq!(eng.language(), AppLanguage::Ru);
         assert_eq!(eng.pack_id(), "starter");
+    }
+
+    #[test]
+    fn set_language_drops_in_flight_download() {
+        let mut eng = Engine::new_logic_only();
+        let (tx, rx) = std::sync::mpsc::channel();
+        eng.model_download_rx = Some(rx);
+        eng.model_download = ModelDownloadState::Working {
+            label: "old".into(),
+            percent: Some(10),
+        };
+        eng.handle(Command::SetLanguage(AppLanguage::En));
+        assert!(eng.model_download_rx.is_none());
+        assert!(matches!(eng.model_download(), ModelDownloadState::Idle));
+        // Старый отправитель больше не доставляет в движок.
+        let _ = tx.send(DownloadMsg::Percent(99));
+        let mut tick = TickResult::default();
+        eng.poll_model_download(&mut tick);
+        assert!(matches!(eng.model_download(), ModelDownloadState::Idle));
     }
 
     #[test]

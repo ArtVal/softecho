@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use super::i18n::AppLanguage;
+use super::i18n::{tr, AppLanguage};
 
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -31,7 +31,9 @@ fn download_model(
     language: AppLanguage,
     tx: &Sender<DownloadMsg>,
 ) -> Result<(), String> {
-    fs::create_dir_all(dest_parent).map_err(|e| format!("Не удалось создать каталог: {e}"))?;
+    fs::create_dir_all(dest_parent).map_err(|e| {
+        format!("{}: {e}", tr(language, "err_mkdir"))
+    })?;
 
     let tmp_zip = dest_parent.join("vosk-model-download.tmp.zip");
     let _ = fs::remove_file(&tmp_zip);
@@ -50,12 +52,15 @@ fn download_model_inner(
     tx: &Sender<DownloadMsg>,
 ) -> Result<(), String> {
     let size = language.vosk_model_size_hint();
-    let _ = tx.send(DownloadMsg::Phase(format!("Скачиваю модель ({size})…")));
+    let _ = tx.send(DownloadMsg::Phase(format!(
+        "{} ({size})…",
+        tr(language, "download_fetching")
+    )));
 
     let resp = ureq::get(language.vosk_model_url())
         .timeout(DOWNLOAD_TIMEOUT)
         .call()
-        .map_err(|e| format!("Не удалось скачать: {e}"))?;
+        .map_err(|e| format!("{}: {e}", tr(language, "err_download")))?;
 
     let total = resp
         .header("Content-Length")
@@ -63,7 +68,8 @@ fn download_model_inner(
         .filter(|&n| n > 0);
 
     let mut reader = resp.into_reader();
-    let mut file = File::create(tmp_zip).map_err(|e| format!("Не удалось записать файл: {e}"))?;
+    let mut file = File::create(tmp_zip)
+        .map_err(|e| format!("{}: {e}", tr(language, "err_write_file")))?;
     let mut buf = [0u8; 64 * 1024];
     let mut downloaded = 0u64;
     let mut last_percent = 255u8;
@@ -71,12 +77,12 @@ fn download_model_inner(
     loop {
         let n = reader
             .read(&mut buf)
-            .map_err(|e| format!("Ошибка чтения: {e}"))?;
+            .map_err(|e| format!("{}: {e}", tr(language, "err_read")))?;
         if n == 0 {
             break;
         }
         file.write_all(&buf[..n])
-            .map_err(|e| format!("Ошибка записи: {e}"))?;
+            .map_err(|e| format!("{}: {e}", tr(language, "err_write")))?;
         downloaded += n as u64;
         if let Some(total) = total {
             let p = ((downloaded.saturating_mul(100)) / total).min(99) as u8;
@@ -88,29 +94,31 @@ fn download_model_inner(
     }
     drop(file);
 
-    let _ = tx.send(DownloadMsg::Phase("Распаковка…".into()));
+    let _ = tx.send(DownloadMsg::Phase(tr(language, "download_unpack").into()));
 
     let model_name = language.vosk_model_dir_name();
     let model_path = dest_parent.join(model_name);
     if model_path.is_dir() {
-        fs::remove_dir_all(&model_path).map_err(|e| format!("Не удалось очистить каталог: {e}"))?;
+        fs::remove_dir_all(&model_path)
+            .map_err(|e| format!("{}: {e}", tr(language, "err_clear_dir")))?;
     }
 
-    extract_zip(tmp_zip, dest_parent)?;
+    extract_zip(tmp_zip, language, dest_parent)?;
     let _ = fs::remove_file(tmp_zip);
 
     if !model_path.is_dir() {
-        return Err(format!("В архиве нет папки {model_name}"));
+        return Err(format!("{} {model_name}", tr(language, "err_zip_missing")));
     }
 
     let _ = tx.send(DownloadMsg::Done);
     Ok(())
 }
 
-fn extract_zip(zip_path: &Path, dest_parent: &Path) -> Result<(), String> {
-    let file = File::open(zip_path).map_err(|e| format!("Не открыть архив: {e}"))?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|e| format!("Повреждённый архив: {e}"))?;
+fn extract_zip(zip_path: &Path, language: AppLanguage, dest_parent: &Path) -> Result<(), String> {
+    let file = File::open(zip_path)
+        .map_err(|e| format!("{}: {e}", tr(language, "err_zip_open")))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("{}: {e}", tr(language, "err_zip_bad")))?;
 
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
@@ -158,7 +166,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let zip_path = dir.join("test.zip");
         write_test_zip(&zip_path, model_name);
-        extract_zip(&zip_path, &dir).unwrap();
+        extract_zip(&zip_path, AppLanguage::Ru, &dir).unwrap();
         assert!(dir.join(model_name).join("README").is_file());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -176,7 +184,7 @@ mod tests {
         zip.start_file("other.txt", options).unwrap();
         zip.write_all(b"x").unwrap();
         zip.finish().unwrap();
-        extract_zip(&zip_path, &dir).unwrap();
+        extract_zip(&zip_path, AppLanguage::En, &dir).unwrap();
         assert!(!dir.join(model_name).exists());
         let _ = fs::remove_dir_all(&dir);
     }
