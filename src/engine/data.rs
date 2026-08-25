@@ -106,6 +106,16 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/transport.json"),
     },
+    EmbeddedPack {
+        id: "pictures",
+        language: AppLanguage::Ru,
+        bytes: include_bytes!("../../assets/exercises/pictures.json"),
+    },
+    EmbeddedPack {
+        id: "pictures_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/pictures_en.json"),
+    },
 ];
 
 /// Язык встроенного набора; пользовательские — без привязки (видны всегда).
@@ -498,7 +508,14 @@ mod tests {
             assert_eq!(pack.title, entry.title);
             assert!(!pack.exercises.is_empty());
         }
-        assert!(list_all_packs().len() >= 13);
+        assert!(list_all_packs().len() >= 15);
+        assert!(
+            list_packs_for(Some(AppLanguage::Ru))
+                .iter()
+                .any(|p| p.id == "pictures")
+        );
+        let pics = load_pack("pictures").expect("pictures");
+        assert!(pics.exercises.iter().any(|e| e.image_id().is_some()));
         assert!(list_packs_for(Some(AppLanguage::En))
             .iter()
             .any(|e| e.id == "starter_en"));
@@ -585,12 +602,14 @@ mod tests {
                 prompt: "p".into(),
                 text: "мама".into(),
                 speak: None,
+                image: None,
             }],
             disabled: vec![Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Word),
                 prompt: "p".into(),
                 text: "папа".into(),
                 speak: None,
+                image: None,
             }],
         };
         let bytes = serde_json::to_vec(&editable).unwrap();

@@ -1,0 +1,89 @@
+{
+  "title": "Pictures: objects",
+  "exercises": [
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What is in the picture?",
+      "image": "cup",
+      "options": ["tea", "house", "bread", "cat"],
+      "answer": "tea"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What is in the picture?",
+      "image": "house",
+      "options": ["house", "water", "apple", "tea"],
+      "answer": "house"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What is in the picture?",
+      "image": "apple",
+      "options": ["cat", "apple", "bread", "house"],
+      "answer": "apple"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What is in the picture?",
+      "image": "cat",
+      "options": ["bread", "water", "cat", "tea"],
+      "answer": "cat"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What is in the picture?",
+      "image": "water",
+      "options": ["water", "house", "apple", "cat"],
+      "answer": "water"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What is in the picture?",
+      "image": "bread",
+      "options": ["tea", "bread", "cat", "house"],
+      "answer": "bread"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Name the picture",
+      "text": "tea",
+      "image": "cup"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Name the picture",
+      "text": "house",
+      "image": "house"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Name the picture",
+      "text": "apple",
+      "image": "apple"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "I drink tea",
+      "image": "cup"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase about the picture",
+      "image": "water",
+      "words": ["I", "drink", "water"],
+      "answer": "I drink water"
+    }
+  ]
+}

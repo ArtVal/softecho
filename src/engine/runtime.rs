@@ -584,6 +584,7 @@ impl Engine {
             prompt,
             text,
             speak: None,
+            image: None,
         });
         ed.error = None;
         ed.note = Some("Задание добавлено — нажмите «Сохранить».".into());
@@ -1966,12 +1967,14 @@ mod tests {
                     prompt: "q".into(),
                     options: vec!["дом".into(), "чай".into()],
                     answer: "дом".into(),
+                    image: None,
                 },
                 Exercise::ChooseWord {
                     stage: Some(ExerciseStage::Word),
                     prompt: "q2".into(),
                     options: vec!["чай".into(), "стол".into()],
                     answer: "чай".into(),
+                    image: None,
                 },
             ],
         }
@@ -2039,6 +2042,7 @@ mod tests {
                 prompt: "q".into(),
                 options: vec!["дом".into(), "чай".into()],
                 answer: "дом".into(),
+                image: None,
             }],
         };
         eng.handle(Command::StartSession);
@@ -2069,12 +2073,14 @@ mod tests {
                     prompt: "q1".into(),
                     options: vec!["дом".into(), "чай".into()],
                     answer: "дом".into(),
+                    image: None,
                 },
                 Exercise::ChooseWord {
                     stage: Some(ExerciseStage::Word),
                     prompt: "q2".into(),
                     options: vec!["дом".into(), "стол".into()],
                     answer: "дом".into(),
+                    image: None,
                 },
             ],
         };
@@ -2113,12 +2119,14 @@ mod tests {
                     prompt: "a".into(),
                     options: vec!["дом".into(), "чай".into()],
                     answer: "дом".into(),
+                    image: None,
                 },
                 Exercise::ChooseWord {
                     stage: Some(ExerciseStage::Word),
                     prompt: "b".into(),
                     options: vec!["чай".into(), "стол".into()],
                     answer: "чай".into(),
+                    image: None,
                 },
             ],
         };

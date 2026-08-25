@@ -27,6 +27,7 @@ zip = { version = "2.2", default-features = false, features = ["deflate"] }
 # Опционально: офлайн-распознавание (фаза 2)
 vosk = { version = "0.3", optional = true }
 cpal = { version = "0.15", optional = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [build-dependencies]
 winresource = "0.1"

@@ -58,6 +58,9 @@ pub enum Exercise {
         prompt: String,
         options: Vec<String>,
         answer: String,
+        /// Id встроенной картинки (`cup`, `house`, …).
+        #[serde(default)]
+        image: Option<String>,
     },
     BuildPhrase {
         #[serde(default)]
@@ -65,6 +68,8 @@ pub enum Exercise {
         prompt: String,
         words: Vec<String>,
         answer: String,
+        #[serde(default)]
+        image: Option<String>,
     },
     ReadAloud {
         #[serde(default)]
@@ -74,6 +79,8 @@ pub enum Exercise {
         /// Что слушать голосом, если на экране короче (слог «МА», вслух «ма ма ма»).
         #[serde(default)]
         speak: Option<String>,
+        #[serde(default)]
+        image: Option<String>,
     },
 }
 
@@ -142,6 +149,15 @@ impl Exercise {
             Self::ChooseWord { answer, .. } | Self::BuildPhrase { answer, .. } => {
                 cue_from_text(answer)
             }
+        }
+    }
+
+    /// Id встроенной картинки, если есть.
+    pub fn image_id(&self) -> Option<&str> {
+        match self {
+            Self::ChooseWord { image, .. }
+            | Self::BuildPhrase { image, .. }
+            | Self::ReadAloud { image, .. } => image.as_deref(),
         }
     }
 }
@@ -825,24 +841,28 @@ mod tests {
                 prompt: "p".into(),
                 text: "доброе утро".into(),
                 speak: None,
+                image: None,
             },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Sound),
                 prompt: "v".into(),
                 text: "А".into(),
                 speak: Some("а а а".into()),
+                image: None,
             },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Syllable),
                 prompt: "s".into(),
                 text: "МА".into(),
                 speak: Some("ма ма ма".into()),
+                image: None,
             },
             Exercise::ChooseWord {
                 stage: Some(ExerciseStage::Word),
                 prompt: "w".into(),
                 options: vec!["чай".into(), "стол".into()],
                 answer: "чай".into(),
+                image: None,
             },
         ];
         let ordered = order_session(pack);
@@ -867,18 +887,21 @@ mod tests {
                 prompt: "s".into(),
                 text: "МА".into(),
                 speak: None,
+                image: None,
             },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Word),
                 prompt: "w".into(),
                 text: "мама".into(),
                 speak: None,
+                image: None,
             },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Phrase),
                 prompt: "p".into(),
                 text: "доброе утро".into(),
                 speak: None,
+                image: None,
             },
         ];
         let ordered = order_session_for_level(pack, ExerciseStage::Word);
@@ -944,24 +967,28 @@ mod tests {
                 prompt: "v".into(),
                 text: "А".into(),
                 speak: None,
+                image: None,
             },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Syllable),
                 prompt: "s".into(),
                 text: "МА".into(),
                 speak: None,
+                image: None,
             },
             Exercise::ChooseWord {
                 stage: Some(ExerciseStage::Word),
                 prompt: "w".into(),
                 options: vec!["а".into(), "б".into()],
                 answer: "а".into(),
+                image: None,
             },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Phrase),
                 prompt: "p".into(),
                 text: "доброе утро".into(),
                 speak: None,
+                image: None,
             },
         ];
         let d = build_diagnosis_set(&pack, 2);
@@ -979,6 +1006,7 @@ mod tests {
             prompt: "q".into(),
             options: vec!["чай".into(), "стол".into()],
             answer: "чай".into(),
+            image: None,
         };
         assert_eq!(
             check_answer(&ex, &UserAnswer::Choice("Чай".into())),
@@ -1001,6 +1029,7 @@ mod tests {
             prompt: "q".into(),
             words: vec!["Я".into(), "пью".into(), "воду".into()],
             answer: "Я пью воду".into(),
+            image: None,
         };
         assert_eq!(
             check_answer(
@@ -1025,6 +1054,7 @@ mod tests {
             prompt: "q".into(),
             text: "Доброе утро".into(),
             speak: None,
+            image: None,
         };
         assert_eq!(
             check_answer(
@@ -1073,12 +1103,14 @@ mod tests {
             prompt: "s".into(),
             text: "МА".into(),
             speak: Some("ма ма ма".into()),
+            image: None,
         };
         let choose = Exercise::ChooseWord {
             stage: Some(ExerciseStage::Word),
             prompt: "w".into(),
             options: vec!["ма".into(), "па".into()],
             answer: "ма".into(),
+            image: None,
         };
         assert_eq!(syllable.map_key(), choose.map_key());
         assert_eq!(syllable.map_key().as_deref(), Some("ма"));
@@ -1118,24 +1150,28 @@ mod tests {
                     prompt: "p".into(),
                     text: "доброе утро".into(),
                     speak: None,
+                    image: None,
                 },
                 Exercise::ReadAloud {
                     stage: Some(ExerciseStage::Sound),
                     prompt: "v".into(),
                     text: "А".into(),
                     speak: Some("а а а".into()),
+                    image: None,
                 },
                 Exercise::ReadAloud {
                     stage: Some(ExerciseStage::Syllable),
                     prompt: "s".into(),
                     text: "МА".into(),
                     speak: Some("ма ма ма".into()),
+                    image: None,
                 },
                 Exercise::ChooseWord {
                     stage: Some(ExerciseStage::Word),
                     prompt: "w".into(),
                     options: vec!["чай".into(), "стол".into()],
                     answer: "чай".into(),
+                    image: None,
                 },
             ],
         };
@@ -1174,18 +1210,21 @@ mod tests {
                 prompt: "a".into(),
                 text: "хлеб".into(),
                 speak: None,
+                image: None,
             },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Word),
                 prompt: "b".into(),
                 text: "чай".into(),
                 speak: None,
+                image: None,
             },
             Exercise::ReadAloud {
                 stage: Some(ExerciseStage::Word),
                 prompt: "c".into(),
                 text: "стол".into(),
                 speak: None,
+                image: None,
             },
         ];
         let mut map = SpeechMap::default();
@@ -1212,18 +1251,21 @@ mod tests {
                     prompt: "p".into(),
                     text: "доброе утро".into(),
                     speak: None,
+                    image: None,
                 },
                 Exercise::ReadAloud {
                     stage: Some(ExerciseStage::Phrase),
                     prompt: "p2".into(),
                     text: "спокойной ночи".into(),
                     speak: None,
+                    image: None,
                 },
                 Exercise::ReadAloud {
                     stage: Some(ExerciseStage::Twister),
                     prompt: "t".into(),
                     text: "шла саша по шоссе".into(),
                     speak: None,
+                    image: None,
                 },
             ],
         };

@@ -1,22 +1,27 @@
 //! Клиентский UI (egui). Общается с движком только через Command / геттеры / tick.
 
+use std::collections::HashMap;
+
 use crate::engine::{
     AppLanguage, AsrStatus, CheckResult, Command, Engine, Exercise, ExerciseStage,
     ModelDownloadState, Screen, SpeechRating, UserAnswer,
 };
 use crate::engine::exercise::speech_map_stage_summaries;
 use crate::engine::i18n::{rating_label, stage_label};
+use crate::engine::images;
 use crate::engine::warmup::{WARMUP_LINKS, WARMUP_SCHEMAS};
 use crate::ui::theme::{apply_theme, apply_theme_scale};
 use crate::ui::widgets::{back_to_menu_button, big_button, footer_buttons, screen_scroll, str_byte_tail};
 
-use eframe::egui::{self, Color32, FontId, OpenUrl, RichText};
+use eframe::egui::{self, Color32, ColorImage, FontId, OpenUrl, RichText, TextureHandle, TextureOptions};
 
 pub struct UiApp {
     engine: Engine,
     editor_prompt: String,
     editor_text: String,
     editor_stage: ExerciseStage,
+    /// Кэш текстур встроенных картинок (id → handle).
+    image_textures: HashMap<String, TextureHandle>,
 }
 
 impl UiApp {
@@ -29,7 +34,39 @@ impl UiApp {
             editor_prompt,
             editor_text: String::new(),
             editor_stage: ExerciseStage::Word,
+            image_textures: HashMap::new(),
         }
+    }
+
+    fn texture_for(&mut self, ctx: &egui::Context, id: &str) -> Option<TextureHandle> {
+        if let Some(tex) = self.image_textures.get(id) {
+            return Some(tex.clone());
+        }
+        let (w, h, rgba) = images::decode_rgba(id)?;
+        let color = ColorImage::from_rgba_unmultiplied([w, h], &rgba);
+        let tex = ctx.load_texture(
+            format!("softecho_img_{id}"),
+            color,
+            TextureOptions::LINEAR,
+        );
+        self.image_textures.insert(id.to_string(), tex.clone());
+        Some(tex)
+    }
+
+    fn show_exercise_image(&mut self, ui: &mut egui::Ui, image_id: Option<&str>) {
+        let Some(id) = image_id else {
+            return;
+        };
+        let Some(tex) = self.texture_for(ui.ctx(), id) else {
+            return;
+        };
+        let max = (ui.available_width() * 0.55).clamp(120.0, 280.0);
+        ui.add(
+            egui::Image::new(&tex)
+                .max_size(egui::vec2(max, max))
+                .maintain_aspect_ratio(true),
+        );
+        ui.add_space(16.0);
     }
 
     fn sync_editor_prompt_default(&mut self) {
@@ -1233,6 +1270,8 @@ impl UiApp {
             None => return,
         };
 
+        let image_id = exercise.image_id().map(str::to_owned);
+
         ui.vertical_centered(|ui| {
             ui.label(
                 RichText::new(exercise.prompt())
@@ -1253,7 +1292,9 @@ impl UiApp {
                     );
                 }
             }
-            ui.add_space(24.0);
+            ui.add_space(16.0);
+            self.show_exercise_image(ui, image_id.as_deref());
+            ui.add_space(8.0);
         });
 
         match exercise {

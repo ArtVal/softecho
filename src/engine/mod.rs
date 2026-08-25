@@ -11,6 +11,7 @@ pub mod audio_pipe;
 pub mod data;
 pub mod exercise;
 pub mod i18n;
+pub mod images;
 pub mod playback;
 pub mod protocol;
 pub mod runtime;

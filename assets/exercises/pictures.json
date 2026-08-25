@@ -1,0 +1,96 @@
+{
+  "title": "Картинки: предметы",
+  "exercises": [
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что на картинке?",
+      "image": "cup",
+      "options": ["чай", "дом", "хлеб", "кот"],
+      "answer": "чай"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что на картинке?",
+      "image": "house",
+      "options": ["дом", "вода", "яблоко", "чай"],
+      "answer": "дом"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что на картинке?",
+      "image": "apple",
+      "options": ["кот", "яблоко", "хлеб", "дом"],
+      "answer": "яблоко"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что на картинке?",
+      "image": "cat",
+      "options": ["хлеб", "вода", "кот", "чай"],
+      "answer": "кот"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что на картинке?",
+      "image": "water",
+      "options": ["вода", "дом", "яблоко", "кот"],
+      "answer": "вода"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Что на картинке?",
+      "image": "bread",
+      "options": ["чай", "хлеб", "кот", "дом"],
+      "answer": "хлеб"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Назовите картинку",
+      "text": "чай",
+      "image": "cup"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Назовите картинку",
+      "text": "дом",
+      "image": "house"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Назовите картинку",
+      "text": "яблоко",
+      "image": "apple"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите фразу",
+      "text": "я пью чай",
+      "image": "cup"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите фразу",
+      "text": "это мой дом",
+      "image": "house"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Соберите фразу про картинку",
+      "image": "water",
+      "words": ["я", "пью", "воду"],
+      "answer": "я пью воду"
+    }
+  ]
+}
