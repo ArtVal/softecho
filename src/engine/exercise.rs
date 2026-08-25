@@ -8,7 +8,7 @@ pub struct ExercisePack {
     pub exercises: Vec<Exercise>,
 }
 
-/// Ступень / уровень занятия. Сессия идёт строго: звуки → слоги → слова → фразы.
+/// Ступень / уровень занятия. Сессия: звуки → слоги → слова → фразы → скороговорки.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExerciseStage {
@@ -17,10 +17,21 @@ pub enum ExerciseStage {
     Syllable,
     Word,
     Phrase,
+    /// Скороговорки / автоматизация (после фраз).
+    Twister,
 }
 
 impl ExerciseStage {
-    pub const ALL: [ExerciseStage; 4] = [
+    pub const ALL: [ExerciseStage; 5] = [
+        ExerciseStage::Sound,
+        ExerciseStage::Syllable,
+        ExerciseStage::Word,
+        ExerciseStage::Phrase,
+        ExerciseStage::Twister,
+    ];
+
+    /// Ступени экспресс-диагностики (без скороговорок).
+    pub const DIAGNOSIS: [ExerciseStage; 4] = [
         ExerciseStage::Sound,
         ExerciseStage::Syllable,
         ExerciseStage::Word,
@@ -33,6 +44,7 @@ impl ExerciseStage {
             Self::Syllable => "Слоги",
             Self::Word => "Слова",
             Self::Phrase => "Фразы",
+            Self::Twister => "Скороговорки",
         }
     }
 }
@@ -145,13 +157,14 @@ pub fn order_session(exercises: Vec<Exercise>) -> Vec<Exercise> {
     out
 }
 
-/// Занятие с выбранного уровня: от этой ступени и выше (звуки→слоги→слова→фразы).
+/// Занятие с выбранного уровня: от этой ступени и выше.
+/// Скороговорки — только если `include_twister` (разблокировка).
 #[allow(dead_code)]
 pub fn order_session_for_level(
     exercises: Vec<Exercise>,
     level: ExerciseStage,
 ) -> Vec<Exercise> {
-    order_session_for_level_with_map(exercises, level, &SpeechMap::default())
+    order_session_for_level_with_map(exercises, level, &SpeechMap::default(), true)
 }
 
 /// То же, но внутри ступени сначала слабые места из карты.
@@ -159,16 +172,51 @@ pub fn order_session_for_level_with_map(
     exercises: Vec<Exercise>,
     level: ExerciseStage,
     map: &SpeechMap,
+    include_twister: bool,
 ) -> Vec<Exercise> {
     let filtered: Vec<Exercise> = exercises
         .into_iter()
-        .filter(|ex| ex.stage() >= level)
+        .filter(|ex| {
+            let s = ex.stage();
+            if s == ExerciseStage::Twister {
+                include_twister && s >= level
+            } else {
+                s >= level
+            }
+        })
         .collect();
     let mut out = Vec::new();
     for bucket in split_by_stage(filtered) {
         out.extend(order_stage_by_map(bucket, map));
     }
     out
+}
+
+/// Скороговорки: уровень ≥ «Фразы» или ≥70% «получается» среди фраз набора с попытками.
+pub fn twister_unlocked(
+    level: Option<ExerciseStage>,
+    pack: &ExercisePack,
+    map: &SpeechMap,
+) -> bool {
+    if matches!(
+        level,
+        Some(ExerciseStage::Phrase | ExerciseStage::Twister)
+    ) {
+        return true;
+    }
+    let entries = pack_speech_entries(pack, map);
+    let attempted: Vec<_> = entries
+        .iter()
+        .filter(|e| e.stage == ExerciseStage::Phrase && e.attempts > 0)
+        .collect();
+    if attempted.is_empty() {
+        return false;
+    }
+    let good = attempted
+        .iter()
+        .filter(|e| e.rating == SpeechRating::Good)
+        .count();
+    (good as f32 / attempted.len() as f32) >= 0.70
 }
 
 fn rating_priority(r: SpeechRating) -> u8 {
@@ -215,7 +263,7 @@ fn order_stage_by_map(mut exercises: Vec<Exercise>, map: &SpeechMap) -> Vec<Exer
 pub fn build_diagnosis_set(exercises: &[Exercise], per_stage: usize) -> Vec<Exercise> {
     use rand::seq::SliceRandom;
     let mut out = Vec::new();
-    for stage in ExerciseStage::ALL {
+    for stage in ExerciseStage::DIAGNOSIS {
         let mut pool: Vec<Exercise> = exercises
             .iter()
             .filter(|e| e.stage() == stage)
@@ -252,7 +300,7 @@ pub fn build_diagnosis_set(exercises: &[Exercise], per_stage: usize) -> Vec<Exer
 
 /// Уровень = первая ступень, где меньше половины верных; если все ок — «Фразы».
 pub fn infer_level(outcomes: &[(ExerciseStage, bool)]) -> ExerciseStage {
-    for stage in ExerciseStage::ALL {
+    for stage in ExerciseStage::DIAGNOSIS {
         let items: Vec<bool> = outcomes
             .iter()
             .filter(|(s, _)| *s == stage)
@@ -951,12 +999,64 @@ mod tests {
         map.record("хлеб", true);
         map.record("чай", false);
         map.record("чай", false);
-        let ordered = order_session_for_level_with_map(pack, ExerciseStage::Word, &map);
+        let ordered = order_session_for_level_with_map(pack, ExerciseStage::Word, &map, true);
         let labels: Vec<_> = ordered
             .iter()
             .filter_map(|e| e.map_label())
             .collect();
         assert_eq!(labels[0], "чай");
         assert_eq!(labels.last().unwrap(), "хлеб");
+    }
+
+    #[test]
+    fn twister_unlock_by_phrase_level_or_map_ratio() {
+        let pack = ExercisePack {
+            title: "t".into(),
+            exercises: vec![
+                Exercise::ReadAloud {
+                    stage: Some(ExerciseStage::Phrase),
+                    prompt: "p".into(),
+                    text: "доброе утро".into(),
+                    speak: None,
+                },
+                Exercise::ReadAloud {
+                    stage: Some(ExerciseStage::Phrase),
+                    prompt: "p2".into(),
+                    text: "спокойной ночи".into(),
+                    speak: None,
+                },
+                Exercise::ReadAloud {
+                    stage: Some(ExerciseStage::Twister),
+                    prompt: "t".into(),
+                    text: "шла саша по шоссе".into(),
+                    speak: None,
+                },
+            ],
+        };
+        let map = SpeechMap::default();
+        assert!(!twister_unlocked(Some(ExerciseStage::Word), &pack, &map));
+        assert!(twister_unlocked(Some(ExerciseStage::Phrase), &pack, &map));
+
+        let mut map = SpeechMap::default();
+        map.record("доброе утро", true);
+        map.record("доброе утро", true);
+        map.record("спокойной ночи", true);
+        map.record("спокойной ночи", true);
+        assert!(twister_unlocked(Some(ExerciseStage::Word), &pack, &map));
+
+        let without = order_session_for_level_with_map(
+            pack.exercises.clone(),
+            ExerciseStage::Word,
+            &SpeechMap::default(),
+            false,
+        );
+        assert!(without.iter().all(|e| e.stage() != ExerciseStage::Twister));
+        let with = order_session_for_level_with_map(
+            pack.exercises.clone(),
+            ExerciseStage::Word,
+            &map,
+            true,
+        );
+        assert!(with.iter().any(|e| e.stage() == ExerciseStage::Twister));
     }
 }

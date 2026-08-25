@@ -11,8 +11,8 @@ use super::data::{
 };
 use super::exercise::{
     build_diagnosis_set, check_answer, infer_level, order_session_for_level_with_map, speech_matches,
-    pack_speech_entries, CheckResult, Exercise, ExercisePack, ExerciseStage, Progress, SpeechMapEntry,
-    UserAnswer,
+    twister_unlocked, pack_speech_entries, CheckResult, Exercise, ExercisePack, ExerciseStage,
+    Progress, SpeechMapEntry, UserAnswer,
 };
 use super::playback::play_pcm_16k;
 use std::collections::{HashMap, HashSet};
@@ -308,10 +308,16 @@ impl Engine {
             self.screen = Screen::LevelPick;
             return;
         };
+        let include_twister = twister_unlocked(
+            self.progress.level,
+            &self.pack,
+            &self.progress.speech_map,
+        );
         let exercises = order_session_for_level_with_map(
             self.pack.exercises.clone(),
             level,
             &self.progress.speech_map,
+            include_twister,
         );
         if exercises.is_empty() {
             self.load_error = Some(
@@ -384,6 +390,20 @@ impl Engine {
     }
 
     fn set_level(&mut self, level: ExerciseStage) {
+        if level == ExerciseStage::Twister
+            && !twister_unlocked(
+                self.progress.level,
+                &self.pack,
+                &self.progress.speech_map,
+            )
+        {
+            self.load_error = Some(
+                "Скороговорки пока закрыты: нужен уровень «Фразы» или ≥70% «получается» на фразах набора."
+                    .into(),
+            );
+            self.screen = Screen::LevelPick;
+            return;
+        }
         self.progress.set_level(level);
         self.persist_progress();
         self.session = None;
@@ -1251,6 +1271,14 @@ impl Engine {
         self.progress.level
     }
 
+    pub fn twister_unlocked(&self) -> bool {
+        twister_unlocked(
+            self.progress.level,
+            &self.pack,
+            &self.progress.speech_map,
+        )
+    }
+
     pub fn speech_map_entries(&self) -> Vec<SpeechMapEntry> {
         pack_speech_entries(&self.pack, &self.progress.speech_map)
     }
@@ -1343,19 +1371,24 @@ mod tests {
         assert_eq!(stages.first(), Some(&crate::engine::ExerciseStage::Syllable));
         let mut seen_word = false;
         let mut seen_phrase = false;
+        let mut seen_twister = false;
         for st in &stages {
             match st {
                 crate::engine::ExerciseStage::Sound => {
                     panic!("звук отфильтрован уровнем «слоги»");
                 }
                 crate::engine::ExerciseStage::Syllable => {
-                    assert!(!seen_word && !seen_phrase);
+                    assert!(!seen_word && !seen_phrase && !seen_twister);
                 }
                 crate::engine::ExerciseStage::Word => {
                     seen_word = true;
-                    assert!(!seen_phrase);
+                    assert!(!seen_phrase && !seen_twister);
                 }
-                crate::engine::ExerciseStage::Phrase => seen_phrase = true,
+                crate::engine::ExerciseStage::Phrase => {
+                    seen_phrase = true;
+                    assert!(!seen_twister);
+                }
+                crate::engine::ExerciseStage::Twister => seen_twister = true,
             }
         }
         assert!(seen_word && seen_phrase);

@@ -34,6 +34,10 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         bytes: include_bytes!("../../assets/exercises/rhymes.json"),
     },
     EmbeddedPack {
+        id: "twisters",
+        bytes: include_bytes!("../../assets/exercises/twisters.json"),
+    },
+    EmbeddedPack {
         id: "daily",
         bytes: include_bytes!("../../assets/exercises/daily.json"),
     },
@@ -247,7 +251,7 @@ mod tests {
             assert_eq!(pack.title, entry.title);
             assert!(!pack.exercises.is_empty());
         }
-        assert!(list_builtin_packs().len() >= 11);
+        assert!(list_builtin_packs().len() >= 12);
     }
 
     #[test]

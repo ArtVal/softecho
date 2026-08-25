@@ -208,6 +208,17 @@ impl UiApp {
             );
             ui.add_space(24.0);
             for level in ExerciseStage::ALL {
+                if level == ExerciseStage::Twister && !self.engine.twister_unlocked() {
+                    ui.label(
+                        RichText::new(
+                            "Скороговорки — после уровня «Фразы» или когда ≥70% фраз «получается».",
+                        )
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::DARK_GRAY),
+                    );
+                    ui.add_space(12.0);
+                    continue;
+                }
                 if big_button(ui, level.label_ru(), Color32::from_rgb(40, 110, 180)).clicked() {
                     self.engine.handle(Command::SetLevel(level));
                 }
@@ -695,7 +706,11 @@ impl UiApp {
                 self.ui_build_phrase(ui);
             }
             Exercise::ReadAloud { text, .. } => {
-                self.ui_read_aloud(ui, &text);
+                let is_twister = matches!(
+                    self.engine.current_exercise().map(|e| e.stage()),
+                    Some(ExerciseStage::Twister)
+                );
+                self.ui_read_aloud(ui, &text, is_twister);
             }
         }
     }
@@ -754,7 +769,7 @@ impl UiApp {
         });
     }
 
-    fn ui_read_aloud(&mut self, ui: &mut egui::Ui, text: &str) {
+    fn ui_read_aloud(&mut self, ui: &mut egui::Ui, text: &str, is_twister: bool) {
         ui.vertical_centered(|ui| {
             ui.label(
                 RichText::new(text)
@@ -762,6 +777,17 @@ impl UiApp {
                     .strong()
                     .color(Color32::from_rgb(15, 35, 55)),
             );
+            if is_twister {
+                ui.add_space(12.0);
+                ui.label(
+                    RichText::new(
+                        "Сначала медленно по словам → трудные места отдельно → целиком медленно → чуть быстрее.\n\
+                         «Готово» или самопроверка — принять попытку.",
+                    )
+                    .font(FontId::proportional(17.0))
+                    .color(Color32::from_rgb(80, 90, 100)),
+                );
+            }
             ui.add_space(28.0);
 
             let asr_ready = matches!(self.engine.asr_status(), AsrStatus::Ready);
