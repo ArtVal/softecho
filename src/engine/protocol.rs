@@ -66,6 +66,9 @@ pub enum Command {
     ListenExercise,
     /// Закончить запись слога/слова (принять partial и проверить).
     StopExerciseListen,
+    /// Прослушать последнюю запись (упражнение / диктофон).
+    PlayLastClip,
+    StopPlayback,
     ListenDictaphone,
     StopDictaphone,
     ClearDictaphone,

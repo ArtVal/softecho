@@ -727,6 +727,58 @@ impl UiApp {
                 ui.add_space(8.0);
             }
 
+            if !listening {
+                let heard = self
+                    .engine
+                    .session()
+                    .map(|s| s.live_text.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let hint = self.engine.session().and_then(|s| s.asr_hint_ok);
+                if !heard.is_empty() {
+                    ui.label(
+                        RichText::new(format!("Услышала: {heard}"))
+                            .font(FontId::proportional(22.0))
+                            .color(Color32::from_rgb(20, 40, 60)),
+                    );
+                    if let Some(ok) = hint {
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(if ok {
+                                "Похоже верно — отметьте сами"
+                            } else {
+                                "Похоже иначе — отметьте сами"
+                            })
+                            .font(FontId::proportional(18.0))
+                            .color(Color32::DARK_GRAY),
+                        );
+                    }
+                    ui.add_space(12.0);
+                }
+
+                if self.engine.has_last_clip() {
+                    let playing = self.engine.is_playing_clip();
+                    let label = if playing {
+                        "Стоп прослушивания"
+                    } else {
+                        "Послушать"
+                    };
+                    let color = if playing {
+                        Color32::from_rgb(120, 90, 70)
+                    } else {
+                        Color32::from_rgb(60, 100, 140)
+                    };
+                    if big_button(ui, label, color).clicked() {
+                        if playing {
+                            self.engine.handle(Command::StopPlayback);
+                        } else {
+                            self.engine.handle(Command::PlayLastClip);
+                        }
+                    }
+                    ui.add_space(12.0);
+                }
+            }
+
             ui.label(
                 RichText::new("Или отметьте сами:")
                     .font(FontId::proportional(18.0))
@@ -817,6 +869,28 @@ impl UiApp {
                         .font(FontId::proportional(22.0))
                         .color(Color32::DARK_GRAY),
                 );
+            }
+
+            if self.engine.has_last_clip() {
+                ui.add_space(20.0);
+                let playing = self.engine.is_playing_clip();
+                let label = if playing {
+                    "Стоп прослушивания"
+                } else {
+                    "Послушать запись"
+                };
+                let color = if playing {
+                    Color32::from_rgb(120, 90, 70)
+                } else {
+                    Color32::from_rgb(60, 100, 140)
+                };
+                if big_button(ui, label, color).clicked() {
+                    if playing {
+                        self.engine.handle(Command::StopPlayback);
+                    } else {
+                        self.engine.handle(Command::PlayLastClip);
+                    }
+                }
             }
 
             ui.add_space(40.0);
@@ -943,6 +1017,28 @@ impl UiApp {
                         }
                     } else if big_button(ui, "Запись", Color32::from_rgb(140, 60, 100)).clicked() {
                         self.engine.handle(Command::ListenDictaphone);
+                    }
+
+                    if !self.engine.dictaphone().listening && self.engine.has_last_clip() {
+                        ui.add_space(12.0);
+                        let playing = self.engine.is_playing_clip();
+                        let label = if playing {
+                            "Стоп прослушивания"
+                        } else {
+                            "Послушать"
+                        };
+                        let color = if playing {
+                            Color32::from_rgb(120, 90, 70)
+                        } else {
+                            Color32::from_rgb(60, 100, 140)
+                        };
+                        if big_button(ui, label, color).clicked() {
+                            if playing {
+                                self.engine.handle(Command::StopPlayback);
+                            } else {
+                                self.engine.handle(Command::PlayLastClip);
+                            }
+                        }
                     }
 
                     if let Some(err) = &self.engine.dictaphone().error {

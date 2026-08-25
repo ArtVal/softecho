@@ -10,6 +10,7 @@ pub mod asr;
 pub mod audio_pipe;
 pub mod data;
 pub mod exercise;
+pub mod playback;
 pub mod protocol;
 pub mod runtime;
 #[cfg(feature = "asr")]

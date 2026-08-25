@@ -12,6 +12,8 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub struct ListenOutcome {
     pub text: String,
+    /// Mono PCM 16 kHz — хвост сессии для «Послушать» (может быть пустым).
+    pub pcm: Vec<i16>,
 }
 
 /// Параметры сессии записи.
@@ -156,6 +158,7 @@ mod vosk_impl {
         catch_up_start_frames, chunk_rms, downsample_i16, pipe_capacity_frames, AudioPipe,
         FRAME_SAMPLES, TARGET_HZ,
     };
+    use crate::engine::playback::{push_capture, CAPTURE_MAX_SAMPLES};
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::path::Path;
     use std::time::{Duration, Instant};
@@ -377,6 +380,7 @@ mod vosk_impl {
         let mut last_loud = Instant::now();
         let mut last_partial = String::new();
         let mut catching_up = false;
+        let mut capture: Vec<i16> = Vec::with_capacity(TARGET_HZ as usize * 4);
 
         // Закрыть фразу. prefer_result — после DecodingState::Finalized (result()).
         // Иначе — final_result() по тишине/Стоп. Запасной путь — last_partial.
@@ -487,6 +491,8 @@ mod vosk_impl {
                 continue;
             };
 
+            push_capture(&mut capture, &samples, CAPTURE_MAX_SAMPLES);
+
             let loud = chunk_rms(&samples) >= SPEECH_RMS;
             if loud {
                 heard_speech = true;
@@ -556,6 +562,7 @@ mod vosk_impl {
 
         if heard_speech || !last_partial.is_empty() {
             for frame in pipe.drain() {
+                push_capture(&mut capture, &frame, CAPTURE_MAX_SAMPLES);
                 let _ = recognizer.accept_waveform(&frame);
             }
             let _ = commit_utterance(
@@ -574,17 +581,22 @@ mod vosk_impl {
         if config.continuous {
             Ok(ListenOutcome {
                 text: String::new(),
+                pcm: capture,
             })
         } else if last_single.is_empty() {
             if config.should_stop() {
                 Ok(ListenOutcome {
                     text: String::new(),
+                    pcm: capture,
                 })
             } else {
                 Err("Ничего не записала".into())
             }
         } else {
-            Ok(ListenOutcome { text: last_single })
+            Ok(ListenOutcome {
+                text: last_single,
+                pcm: capture,
+            })
         }
     }
 

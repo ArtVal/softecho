@@ -14,6 +14,7 @@ use super::exercise::{
     pack_speech_entries, CheckResult, Exercise, ExercisePack, ExerciseStage, Progress, SpeechMapEntry,
     UserAnswer,
 };
+use super::playback::play_pcm_16k;
 use std::collections::{HashMap, HashSet};
 use super::protocol::{Command, ModelDownloadState, Screen, TickResult};
 use super::vosk_download::{spawn_model_download, DownloadMsg};
@@ -87,8 +88,10 @@ pub struct SessionState {
     pub picked: Vec<String>,
     pub listening: bool,
     pub listen_error: Option<String>,
-    /// Текст по мере распознавания.
+    /// Текст по мере распознавания / после записи (подсказка ASR).
     pub live_text: String,
+    /// Мягкая оценка ASR после «Сказать» (не зачёт — ждём самопроверку).
+    pub asr_hint_ok: Option<bool>,
     kind: SessionKind,
     /// Итоги по заданиям диагностики (ступень, верно?).
     outcomes: Vec<(ExerciseStage, bool)>,
@@ -122,6 +125,10 @@ pub struct Engine {
     exercise_listen_stop: Option<Arc<AtomicBool>>,
     /// Vosk разгребает буфер — показать «подождите».
     please_wait: bool,
+    /// Последняя запись (упражнение или диктофон) для «Послушать».
+    last_clip: Vec<i16>,
+    playback_stop: Option<Arc<AtomicBool>>,
+    playback_busy: Arc<AtomicBool>,
     dictaphone: DictaphoneState,
     model_download: ModelDownloadState,
     model_download_rx: Option<Receiver<DownloadMsg>>,
@@ -165,6 +172,9 @@ impl Engine {
             listen_live: Arc::new(Mutex::new(String::new())),
             exercise_listen_stop: None,
             please_wait: false,
+            last_clip: Vec::new(),
+            playback_stop: None,
+            playback_busy: Arc::new(AtomicBool::new(false)),
             dictaphone: DictaphoneState::default(),
             model_download: ModelDownloadState::default(),
             model_download_rx: None,
@@ -322,6 +332,7 @@ impl Engine {
             listening: false,
             listen_error: None,
             live_text: String::new(),
+            asr_hint_ok: None,
             kind: SessionKind::Practice,
             outcomes: vec![],
             session_boost: HashMap::new(),
@@ -357,6 +368,7 @@ impl Engine {
             listening: false,
             listen_error: None,
             live_text: String::new(),
+            asr_hint_ok: None,
             kind: SessionKind::Diagnosis,
             outcomes: vec![],
             session_boost: HashMap::new(),
@@ -403,11 +415,29 @@ impl Engine {
         self.listen_target = None;
         self.listen_purpose = None;
         self.please_wait = false;
+        self.stop_playback();
+
+        let heard_fallback = self
+            .session
+            .as_ref()
+            .map(|s| s.live_text.trim().to_string())
+            .filter(|t| !t.is_empty());
+        let answer = match answer {
+            UserAnswer::ReadDone {
+                matched,
+                heard: None,
+            } => UserAnswer::ReadDone {
+                matched,
+                heard: heard_fallback,
+            },
+            other => other,
+        };
 
         let Some(session) = self.session.as_mut() else {
             return;
         };
         session.listening = false;
+        session.asr_hint_ok = None;
         let Some(ex) = session.exercises.get(session.index).cloned() else {
             return;
         };
@@ -448,6 +478,8 @@ impl Engine {
         self.listen_rx = None;
         self.listen_target = None;
         self.listen_purpose = None;
+        self.stop_playback();
+        self.last_clip.clear();
         let Some(session) = self.session.as_mut() else {
             return;
         };
@@ -547,6 +579,8 @@ impl Engine {
         if self.listen_rx.is_some() {
             return;
         }
+        self.stop_playback();
+        self.last_clip.clear();
 
         let target = self
             .current_exercise()
@@ -568,6 +602,7 @@ impl Engine {
             session.listening = true;
             session.listen_error = None;
             session.live_text.clear();
+            session.asr_hint_ok = None;
         }
 
         let stop = Arc::new(AtomicBool::new(false));
@@ -596,6 +631,7 @@ impl Engine {
         if self.listen_rx.is_some() {
             return;
         }
+        self.stop_playback();
         let stop = Arc::new(AtomicBool::new(false));
         self.dictaphone.listening = true;
         self.dictaphone.error = None;
@@ -642,6 +678,8 @@ impl Engine {
     }
 
     fn clear_dictaphone_buffer(&mut self) {
+        self.stop_playback();
+        self.last_clip.clear();
         self.dictaphone.live_text.clear();
         self.dictaphone.transcript.clear();
         self.dictaphone.error = None;
@@ -650,6 +688,37 @@ impl Engine {
         if let Ok(mut g) = self.dictaphone.live_partial.lock() {
             g.clear();
         }
+    }
+
+    fn store_last_clip(&mut self, pcm: Vec<i16>) {
+        if pcm.is_empty() {
+            return;
+        }
+        self.last_clip = pcm;
+    }
+
+    fn play_last_clip(&mut self) {
+        if self.last_clip.is_empty() {
+            return;
+        }
+        if self.playback_busy.load(Ordering::Relaxed) {
+            self.stop_playback();
+            return;
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        self.playback_stop = Some(Arc::clone(&stop));
+        play_pcm_16k(
+            self.last_clip.clone(),
+            stop,
+            Arc::clone(&self.playback_busy),
+        );
+    }
+
+    fn stop_playback(&mut self) {
+        if let Some(stop) = &self.playback_stop {
+            stop.store(true, Ordering::Relaxed);
+        }
+        self.playback_stop = None;
     }
 
     fn save_dictaphone_now(&mut self) {
@@ -808,6 +877,10 @@ impl Engine {
             tick.want_repaint = true;
             tick.repaint_after.get_or_insert(Duration::from_millis(200));
         }
+        if self.playback_busy.load(Ordering::Relaxed) {
+            tick.want_repaint = true;
+            tick.repaint_after.get_or_insert(Duration::from_millis(100));
+        }
         if self.listen_rx.is_some() {
             self.sync_live_text();
         }
@@ -871,6 +944,7 @@ impl Engine {
                             }
                             match outcome {
                                 Ok(heard) => {
+                                    self.store_last_clip(heard.pcm);
                                     self.flush_dictaphone_live_tail();
                                     if self.dictaphone.transcript.is_empty()
                                         && !heard.text.is_empty()
@@ -904,23 +978,24 @@ impl Engine {
                             }
                             match outcome {
                                 Ok(heard) => {
+                                    self.store_last_clip(heard.pcm);
                                     let text = self.exercise_heard_text(&heard.text);
+                                    let matched = if text.is_empty() {
+                                        None
+                                    } else {
+                                        Some(speech_matches(&target, &text))
+                                    };
                                     if let Some(session) = self.session.as_mut() {
-                                        session.live_text = text.clone();
+                                        session.live_text = text;
+                                        session.asr_hint_ok = matched;
+                                        session.listen_error = None;
                                     }
-                                    let matched = speech_matches(&target, &text);
-                                    self.submit(UserAnswer::ReadDone {
-                                        matched,
-                                        heard: if text.is_empty() {
-                                            None
-                                        } else {
-                                            Some(text)
-                                        },
-                                    });
+                                    // ASR — подсказка; зачёт только через «Получилось / Не получилось».
                                 }
                                 Err(e) => {
                                     if let Some(session) = self.session.as_mut() {
                                         session.listen_error = Some(e);
+                                        session.asr_hint_ok = None;
                                     }
                                 }
                             }
@@ -934,6 +1009,7 @@ impl Engine {
     }
 
     fn abort_listen(&mut self) {
+        self.stop_playback();
         if let Some(stop) = &self.exercise_listen_stop {
             stop.store(true, Ordering::Relaxed);
         }
@@ -1026,6 +1102,8 @@ impl Engine {
             Command::Submit(answer) => self.submit(answer),
             Command::ListenExercise => self.try_listen(),
             Command::StopExerciseListen => self.stop_exercise_listen(),
+            Command::PlayLastClip => self.play_last_clip(),
+            Command::StopPlayback => self.stop_playback(),
             Command::ListenDictaphone => self.try_listen_dictaphone(),
             Command::StopDictaphone => self.stop_dictaphone(),
             Command::ClearDictaphone => self.clear_dictaphone_buffer(),
@@ -1096,6 +1174,14 @@ impl Engine {
 
     pub fn please_wait(&self) -> bool {
         self.please_wait
+    }
+
+    pub fn has_last_clip(&self) -> bool {
+        !self.last_clip.is_empty()
+    }
+
+    pub fn is_playing_clip(&self) -> bool {
+        self.playback_busy.load(Ordering::Relaxed)
     }
 
     pub fn dictaphone(&self) -> &DictaphoneState {
@@ -1196,6 +1282,7 @@ impl SessionState {
         self.listen_error = None;
         self.listening = false;
         self.live_text.clear();
+        self.asr_hint_ok = None;
         match self.exercises.get(self.index) {
             Some(Exercise::BuildPhrase { words, .. }) => {
                 self.pool = words.clone();
@@ -1702,6 +1789,7 @@ mod tests {
     fn submit_updates_speech_map() {
         let mut eng = Engine::new_logic_only();
         eng.progress.level = Some(ExerciseStage::Syllable);
+        eng.progress.speech_map = Default::default();
         eng.handle(Command::StartSession);
         let ex = eng.current_exercise().cloned().unwrap();
         let key = ex.map_key().expect("ключ");
