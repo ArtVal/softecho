@@ -1242,6 +1242,16 @@ impl Engine {
     pub fn handle(&mut self, cmd: Command) {
         match cmd {
             Command::GoHome => {
+                // Единый выход «В меню»: то же подчищение, что у Leave* с отдельных экранов.
+                if matches!(self.screen, Screen::Dictaphone) {
+                    self.clear_dictaphone_buffer();
+                }
+                if matches!(self.screen, Screen::Settings) {
+                    if !matches!(self.model_download, ModelDownloadState::Working { .. }) {
+                        self.model_download = ModelDownloadState::Idle;
+                    }
+                    self.model_download_note = None;
+                }
                 self.abort_listen();
                 self.session = None;
                 self.pack_editor = None;
@@ -2198,6 +2208,16 @@ mod tests {
         assert!(matches!(eng.screen(), Screen::Dictaphone));
         eng.handle(Command::LeaveDictaphone);
         assert!(matches!(eng.screen(), Screen::Home));
+    }
+
+    #[test]
+    fn go_home_from_dictaphone_clears_buffer() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::OpenDictaphone);
+        eng.dictaphone.transcript = "черновик".into();
+        eng.handle(Command::GoHome);
+        assert!(matches!(eng.screen(), Screen::Home));
+        assert!(eng.dictaphone.transcript.is_empty());
     }
 
     #[test]

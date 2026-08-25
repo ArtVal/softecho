@@ -11,7 +11,9 @@ use crate::engine::i18n::{rating_label, stage_label};
 use crate::engine::images;
 use crate::engine::warmup::{WARMUP_LINKS, WARMUP_SCHEMAS};
 use crate::ui::theme::{apply_theme, apply_theme_scale};
-use crate::ui::widgets::{back_to_menu_button, big_button, footer_buttons, screen_scroll, str_byte_tail};
+use crate::ui::widgets::{
+    back_to_menu_button, big_button, big_button_enabled, footer_buttons, screen_scroll, str_byte_tail,
+};
 
 use eframe::egui::{self, Color32, ColorImage, FontId, OpenUrl, RichText, TextureHandle, TextureOptions};
 
@@ -147,9 +149,13 @@ impl UiApp {
         let lang = self.engine.language();
         ui.vertical_centered(|ui| {
             ui.add_space(16.0);
+            let scale = ui
+                .ctx()
+                .data(|d| d.get_temp::<f32>(egui::Id::new("softecho_ui_scale")))
+                .unwrap_or(1.0);
             ui.label(
                 RichText::new("SoftEcho")
-                    .font(FontId::proportional(42.0))
+                    .font(FontId::proportional(42.0 * scale))
                     .strong()
                     .color(Color32::from_rgb(20, 40, 60)),
             );
@@ -301,6 +307,12 @@ impl UiApp {
             ui.add_space(24.0);
             for level in ExerciseStage::ALL {
                 if level == ExerciseStage::Twister && !self.engine.twister_unlocked() {
+                    let _ = big_button_enabled(
+                        ui,
+                        t.t("twister_locked"),
+                        Color32::from_rgb(40, 110, 180),
+                        false,
+                    );
                     ui.add_space(12.0);
                     continue;
                 }
@@ -452,10 +464,6 @@ impl UiApp {
                 ui.add_space(20.0);
                 if big_button(ui, t.t("editor_clone"), Color32::from_rgb(40, 130, 90)).clicked() {
                     self.engine.handle(Command::ClonePackForEdit);
-                }
-                ui.add_space(8.0);
-                if big_button(ui, t.t("back"), Color32::from_rgb(90, 100, 120)).clicked() {
-                    self.engine.handle(Command::LeavePackEditor);
                 }
                 return;
             }
@@ -639,10 +647,6 @@ impl UiApp {
             if big_button(ui, t.t("save"), Color32::from_rgb(40, 130, 90)).clicked() {
                 self.engine.handle(Command::EditorSave);
             }
-            ui.add_space(8.0);
-            if big_button(ui, t.t("back"), Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::LeavePackEditor);
-            }
             ui.add_space(24.0);
         });
     }
@@ -823,10 +827,6 @@ impl UiApp {
                         .color(color),
                 );
             }
-            ui.add_space(8.0);
-            if big_button(ui, t.t("back"), Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::LeaveProgress);
-            }
             ui.add_space(20.0);
         });
     }
@@ -919,10 +919,6 @@ impl UiApp {
             if big_button(ui, t.t("start"), Color32::from_rgb(40, 110, 180)).clicked() {
                 self.engine.handle(Command::StartSession);
             }
-            ui.add_space(8.0);
-            if big_button(ui, t.t("back"), Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::LeaveWarmup);
-            }
             ui.add_space(24.0);
         });
     }
@@ -1008,7 +1004,7 @@ impl UiApp {
                     .color(Color32::DARK_GRAY),
             );
             ui.add_space(12.0);
-            ui.horizontal(|ui| {
+            ui.vertical_centered(|ui| {
                 for option in AppLanguage::ALL {
                     let selected = option == lang;
                     let fill = if selected {
@@ -1084,28 +1080,35 @@ impl UiApp {
             if big_button(ui, t.t("choose_level"), Color32::from_rgb(90, 100, 120)).clicked() {
                 self.engine.handle(Command::OpenLevelPick);
             }
-            ui.add_space(8.0);
-            if big_button(ui, t.t("speech_map"), Color32::from_rgb(100, 80, 150)).clicked() {
-                self.engine.handle(Command::OpenSpeechMap);
+            if !self.engine.simple_mode() {
+                ui.add_space(8.0);
+                if big_button(ui, t.t("speech_map"), Color32::from_rgb(100, 80, 150)).clicked() {
+                    self.engine.handle(Command::OpenSpeechMap);
+                }
+                ui.add_space(8.0);
+                if big_button(ui, t.t("warmup"), Color32::from_rgb(70, 120, 100)).clicked() {
+                    self.engine.handle(Command::OpenWarmup);
+                }
+                ui.add_space(8.0);
+                if big_button(ui, t.t("progress"), Color32::from_rgb(100, 80, 150)).clicked() {
+                    self.engine.handle(Command::OpenProgress);
+                }
+                ui.add_space(8.0);
+                if big_button(ui, t.t("pack_editor"), Color32::from_rgb(90, 100, 120)).clicked() {
+                    self.engine.handle(Command::OpenPackEditor);
+                }
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(t.t("weak_hint"))
+                        .font(FontId::proportional(15.0))
+                        .color(Color32::DARK_GRAY),
+                );
+            } else {
+                ui.add_space(8.0);
+                if big_button(ui, t.t("warmup"), Color32::from_rgb(70, 120, 100)).clicked() {
+                    self.engine.handle(Command::OpenWarmup);
+                }
             }
-            ui.add_space(8.0);
-            if big_button(ui, t.t("warmup"), Color32::from_rgb(70, 120, 100)).clicked() {
-                self.engine.handle(Command::OpenWarmup);
-            }
-            ui.add_space(8.0);
-            if big_button(ui, t.t("progress"), Color32::from_rgb(100, 80, 150)).clicked() {
-                self.engine.handle(Command::OpenProgress);
-            }
-            ui.add_space(8.0);
-            if big_button(ui, t.t("pack_editor"), Color32::from_rgb(90, 100, 120)).clicked() {
-                self.engine.handle(Command::OpenPackEditor);
-            }
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new(t.t("weak_hint"))
-                    .font(FontId::proportional(15.0))
-                    .color(Color32::DARK_GRAY),
-            );
 
             ui.add_space(24.0);
             ui.label(
@@ -1338,6 +1341,10 @@ impl UiApp {
         };
         let pool = session.pool.clone();
         let can_check = !session.picked.is_empty() && session.pool.is_empty();
+        let can_undo = !session.picked.is_empty();
+        let t_undo = self.engine.ui_text().t("undo").to_string();
+        let t_reset = self.engine.ui_text().t("reset").to_string();
+        let t_check = self.engine.ui_text().t("check").to_string();
 
         ui.vertical_centered(|ui| {
             ui.label(
@@ -1363,12 +1370,19 @@ impl UiApp {
 
         ui.add_space(24.0);
         ui.vertical_centered(|ui| {
-            ui.horizontal(|ui| {
-                if big_button(ui, self.engine.ui_text().t("reset"), Color32::from_rgb(120, 90, 70)).clicked() {
+            footer_buttons(ui, |ui| {
+                if big_button_enabled(ui, &t_undo, Color32::from_rgb(90, 100, 120), can_undo)
+                    .clicked()
+                {
+                    self.engine.handle(Command::UndoPickedWord);
+                }
+                ui.add_space(8.0);
+                if big_button(ui, &t_reset, Color32::from_rgb(120, 90, 70)).clicked() {
                     self.engine.handle(Command::ResetBuildPhrase);
                 }
-                ui.add_space(12.0);
-                if can_check && big_button(ui, self.engine.ui_text().t("check"), Color32::from_rgb(40, 130, 90)).clicked()
+                ui.add_space(8.0);
+                if big_button_enabled(ui, &t_check, Color32::from_rgb(40, 130, 90), can_check)
+                    .clicked()
                 {
                     let parts = self
                         .engine
@@ -1525,12 +1539,12 @@ impl UiApp {
             ui.add_space(8.0);
             if listening {
                 ui.label(
-                    RichText::new(self.engine.ui_text().t("done"))
+                    RichText::new(self.engine.ui_text().t("finish_recording_first"))
                         .font(FontId::proportional(18.0))
                         .color(Color32::DARK_GRAY),
                 );
             } else {
-                ui.horizontal(|ui| {
+                footer_buttons(ui, |ui| {
                     if big_button(
                         ui,
                         self.engine.ui_text().t("ok_self"),
@@ -1543,7 +1557,7 @@ impl UiApp {
                             heard: None,
                         }));
                     }
-                    ui.add_space(12.0);
+                    ui.add_space(8.0);
                     if big_button(
                         ui,
                         self.engine.ui_text().t("fail_self"),
@@ -1653,14 +1667,11 @@ impl UiApp {
                 if let Some(left) = self.engine.feedback_requeues_left() {
                     let hint = if left == 0 {
                         self.engine.ui_text().t("requeue_done").into()
-                    } else if self.engine.language() == AppLanguage::En {
-                        format!(
-                            "We'll bring it back later — more errors come sooner. Up to {left} more times this lesson."
-                        )
                     } else {
-                        format!(
-                            "Вернём позже — чем чаще ошибка, тем раньше. Ещё до {left} раз в этом занятии."
-                        )
+                        self.engine
+                            .ui_text()
+                            .t("requeue_later")
+                            .replace("{n}", &left.to_string())
                     };
                     ui.label(
                         RichText::new(hint)
@@ -1734,8 +1745,8 @@ impl UiApp {
                             } else {
                                 ui.add_space(8.0);
                             }
-                            if big_button(ui, t.t("back"), Color32::from_rgb(90, 100, 110)).clicked() {
-                                self.engine.handle(Command::LeaveDictaphone);
+                            if big_button(ui, t.t("to_menu"), Color32::from_rgb(90, 100, 110)).clicked() {
+                                self.engine.handle(Command::GoHome);
                             }
                         });
                     }

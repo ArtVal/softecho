@@ -1,6 +1,6 @@
 //! Кнопки и мелкие UI-хелперы.
 
-use eframe::egui::{self, Color32, FontId, RichText, Sense, Vec2};
+use eframe::egui::{self, Color32, FontId, Sense, Vec2};
 
 pub fn str_byte_tail(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
@@ -14,11 +14,21 @@ pub fn str_byte_tail(s: &str, max_bytes: usize) -> &str {
 }
 
 pub fn big_button(ui: &mut egui::Ui, label: &str, fill: Color32) -> egui::Response {
+    big_button_enabled(ui, label, fill, true)
+}
+
+/// Крупная кнопка; при `enabled == false` серая и без клика.
+pub fn big_button_enabled(
+    ui: &mut egui::Ui,
+    label: &str,
+    fill: Color32,
+    enabled: bool,
+) -> egui::Response {
     let scale = ui
         .ctx()
         .data(|d| d.get_temp::<f32>(egui::Id::new("softecho_ui_scale")))
         .unwrap_or(1.0);
-    big_button_scaled(ui, label, fill, scale)
+    big_button_scaled(ui, label, fill, scale, enabled)
 }
 
 pub fn big_button_scaled(
@@ -26,29 +36,36 @@ pub fn big_button_scaled(
     label: &str,
     fill: Color32,
     scale: f32,
+    enabled: bool,
 ) -> egui::Response {
     let scale = scale.clamp(1.0, 1.6);
     let width = (ui.available_width().clamp(200.0, 280.0) * scale.min(1.25)).min(ui.available_width());
     let narrow = ui.available_width() < 520.0;
     let height = if narrow { 52.0 } else { 56.0 } * scale;
     let font_size = if narrow { 20.0 } else { 24.0 } * scale;
-    let text = RichText::new(label)
-        .font(FontId::proportional(font_size))
-        .color(Color32::WHITE);
+    let fill = if enabled {
+        fill
+    } else {
+        Color32::from_rgb(150, 155, 160)
+    };
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
     let desired = Vec2::new(width, height);
-    let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
+    let (rect, response) = ui.allocate_exact_size(desired, sense);
     if ui.is_rect_visible(rect) {
-        let bg = if response.hovered() {
+        let bg = if enabled && response.hovered() {
             lighten(fill, 20)
         } else {
             fill
         };
-        ui.painter()
-            .rect_filled(rect, 8.0, bg);
+        ui.painter().rect_filled(rect, 8.0, bg);
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            text.text(),
+            label,
             FontId::proportional(font_size),
             Color32::WHITE,
         );
@@ -60,7 +77,7 @@ pub fn big_button_scaled(
 pub fn back_to_menu_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     ui.add(
         egui::Button::new(
-            RichText::new(label)
+            egui::RichText::new(label)
                 .font(FontId::proportional(18.0))
                 .color(Color32::from_rgb(40, 55, 75)),
         )

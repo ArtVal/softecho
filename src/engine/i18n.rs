@@ -160,6 +160,8 @@ pub fn tr(lang: AppLanguage, key: &str) -> &'static str {
         (AppLanguage::En, "fail_self") => "Not yet",
         (AppLanguage::Ru, "or_self") => "Или отметьте сами:",
         (AppLanguage::En, "or_self") => "Or mark yourself:",
+        (AppLanguage::Ru, "finish_recording_first") => "Сначала нажмите «Готово», чтобы остановить запись.",
+        (AppLanguage::En, "finish_recording_first") => "Press Done first to stop recording.",
         (AppLanguage::Ru, "next") => "Дальше",
         (AppLanguage::En, "next") => "Next",
         (AppLanguage::Ru, "save") => "Сохранить",
@@ -250,6 +252,16 @@ pub fn tr(lang: AppLanguage, key: &str) -> &'static str {
         (AppLanguage::En, "requeue_done") => {
             "Won't return in this lesson — limit reached or “don't repeat”."
         }
+        (AppLanguage::Ru, "requeue_later") => {
+            "Вернём позже — чем чаще ошибка, тем раньше. Ещё до {n} раз в этом занятии."
+        }
+        (AppLanguage::En, "requeue_later") => {
+            "We'll bring it back later — more errors come sooner. Up to {n} more times this lesson."
+        }
+        (AppLanguage::Ru, "twister_locked") => "Скороговорки (ещё рано)",
+        (AppLanguage::En, "twister_locked") => "Tongue twisters (not yet)",
+        (AppLanguage::Ru, "undo") => "Отменить",
+        (AppLanguage::En, "undo") => "Undo",
         (AppLanguage::Ru, "hint_ok") => "Похоже верно — отметьте сами",
         (AppLanguage::En, "hint_ok") => "Looks right — mark yourself",
         (AppLanguage::Ru, "hint_bad") => "Похоже иначе — отметьте сами",
