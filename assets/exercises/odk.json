@@ -1,0 +1,103 @@
+{
+  "title": "Артикуляция: па-та-ка",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Повторите слог спокойно",
+      "text": "ПА",
+      "speak": "па па па"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Повторите слог спокойно",
+      "text": "ТА",
+      "speak": "та та та"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Повторите слог спокойно",
+      "text": "КА",
+      "speak": "ка ка ка"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Повторите слог спокойно",
+      "text": "МА",
+      "speak": "ма ма ма"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Повторите слог спокойно",
+      "text": "БА",
+      "speak": "ба ба ба"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Повторите слог спокойно",
+      "text": "ДА",
+      "speak": "да да да"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Повторите слог спокойно",
+      "text": "ЛА",
+      "speak": "ла ла ла"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Повторите слог спокойно",
+      "text": "НА",
+      "speak": "на на на"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите ряд медленно",
+      "text": "па-та-ка",
+      "speak": "па та ка"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите ряд медленно",
+      "text": "па-та-ка-па",
+      "speak": "па та ка па"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите ряд медленно",
+      "text": "ма-па-та",
+      "speak": "ма па та"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите ряд медленно",
+      "text": "ба-да-га",
+      "speak": "ба да га"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите ряд ещё раз (можно чуть быстрее)",
+      "text": "па та ка па та ка",
+      "speak": "па та ка па та ка"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите ряд ещё раз (можно чуть быстрее)",
+      "text": "ма ма па па та та",
+      "speak": "ма ма па па та та"
+    }
+  ]
+}

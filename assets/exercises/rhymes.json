@@ -1,0 +1,115 @@
+{
+  "title": "Простые рифмовки",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ГА",
+      "speak": "га га га"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Скажите слог",
+      "text": "ВА",
+      "speak": "ва ва ва"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "гуси"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Скажите слово",
+      "text": "трава"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "гуси-гага"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "на траве дрова"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "гуси-гага, на траве дрова"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "мама мыла раму"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "тише едешь — дальше будешь"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "раз-два, три-четыре"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "кап-кап, капает вода"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "тик-так, ходит час"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "бум-бум, барабан"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "ля-ля, песенка моя"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "топ-топ, идут ножки"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "сейчас-потом, шаг за шагом"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку медленно",
+      "text": "утро-вечер, день за днём"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Скажите рифмовку целиком",
+      "text": "раз-два-три, говори"
+    }
+  ]
+}
