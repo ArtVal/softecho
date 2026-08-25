@@ -157,12 +157,16 @@ UI шлёт только `Command`; состояние читает через �
 
 ## Проверки
 
+Локально:
+
 ```bash
 cargo test
 cargo test --features asr
 cargo clippy -- -D warnings
 cargo clippy --features asr -- -D warnings
 ```
+
+На GitHub: workflow **test** (`cargo test` на push/PR в `main`).
 
 ## Лицензия
 

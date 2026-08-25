@@ -205,6 +205,19 @@ impl UiApp {
                 );
             }
 
+            // Подсказка ROADMAP: скачать модель с главной, если Vosk ещё нет.
+            let show_model_cta = matches!(
+                self.engine.asr_status(),
+                AsrStatus::ModelMissing | AsrStatus::Error(_)
+            ) || matches!(
+                self.engine.model_download(),
+                ModelDownloadState::Working { .. } | ModelDownloadState::Failed(_)
+            ) || self.engine.model_download_note().is_some();
+            if show_model_cta {
+                ui.add_space(16.0);
+                self.ui_model_download(ui, false);
+            }
+
             ui.add_space(32.0);
             if big_button(ui, t.t("start"), Color32::from_rgb(40, 110, 180)).clicked() {
                 self.engine.handle(Command::StartSession);
@@ -1152,71 +1165,7 @@ impl UiApp {
             }
 
             ui.add_space(20.0);
-            match self.engine.model_download() {
-                ModelDownloadState::Idle | ModelDownloadState::Succeeded => {
-                    let can_download = !matches!(
-                        self.engine.asr_status(),
-                        AsrStatus::Disabled | AsrStatus::Ready
-                    );
-                    if can_download {
-                        ui.label(
-                            RichText::new(format!(
-                                "{} ({})",
-                                t.t("download_model_hint"),
-                                lang.vosk_model_size_hint()
-                            ))
-                            .font(FontId::proportional(18.0))
-                            .color(Color32::DARK_GRAY),
-                        );
-                        ui.add_space(12.0);
-                        if big_button(ui, t.t("download_model"), Color32::from_rgb(40, 110, 180))
-                            .clicked()
-                        {
-                            self.engine.handle(Command::StartModelDownload);
-                        }
-                    } else if matches!(self.engine.asr_status(), AsrStatus::Ready) {
-                        ui.label(
-                            RichText::new(t.t("model_ready"))
-                                .font(FontId::proportional(18.0))
-                                .color(Color32::DARK_GRAY),
-                        );
-                    }
-                }
-                ModelDownloadState::Working { label, percent } => {
-                    ui.label(
-                        RichText::new(label)
-                            .font(FontId::proportional(20.0))
-                            .strong(),
-                    );
-                    if let Some(p) = percent {
-                        ui.add_space(8.0);
-                        ui.add(
-                            egui::ProgressBar::new(f32::from(*p) / 100.0)
-                                .text(format!("{p}%"))
-                                .desired_width(320.0),
-                        );
-                    } else {
-                        ui.add_space(8.0);
-                        ui.spinner();
-                    }
-                }
-                ModelDownloadState::Failed(err) => {
-                    ui.colored_label(Color32::from_rgb(160, 60, 40), err);
-                    ui.add_space(12.0);
-                    if big_button(ui, t.t("retry"), Color32::from_rgb(40, 110, 180)).clicked() {
-                        self.engine.handle(Command::StartModelDownload);
-                    }
-                }
-            }
-
-            if let Some(note) = self.engine.model_download_note() {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new(note)
-                        .font(FontId::proportional(18.0))
-                        .color(Color32::from_rgb(30, 120, 60)),
-                );
-            }
+            self.ui_model_download(ui, true);
 
             if let Some(err) = self.engine.save_error() {
                 ui.add_space(12.0);
@@ -1226,6 +1175,77 @@ impl UiApp {
                 );
             }
         });
+    }
+
+    /// Скачивание модели Vosk (главная и настройки).
+    fn ui_model_download(&mut self, ui: &mut egui::Ui, show_ready: bool) {
+        let t = self.engine.ui_text();
+        let lang = self.engine.language();
+        match self.engine.model_download() {
+            ModelDownloadState::Idle | ModelDownloadState::Succeeded => {
+                let can_download = !matches!(
+                    self.engine.asr_status(),
+                    AsrStatus::Disabled | AsrStatus::Ready
+                );
+                if can_download {
+                    ui.label(
+                        RichText::new(format!(
+                            "{} ({})",
+                            t.t("download_model_hint"),
+                            lang.vosk_model_size_hint()
+                        ))
+                        .font(FontId::proportional(18.0))
+                        .color(Color32::DARK_GRAY),
+                    );
+                    ui.add_space(12.0);
+                    if big_button(ui, t.t("download_model"), Color32::from_rgb(40, 110, 180))
+                        .clicked()
+                    {
+                        self.engine.handle(Command::StartModelDownload);
+                    }
+                } else if show_ready && matches!(self.engine.asr_status(), AsrStatus::Ready) {
+                    ui.label(
+                        RichText::new(t.t("model_ready"))
+                            .font(FontId::proportional(18.0))
+                            .color(Color32::DARK_GRAY),
+                    );
+                }
+            }
+            ModelDownloadState::Working { label, percent } => {
+                ui.label(
+                    RichText::new(label)
+                        .font(FontId::proportional(20.0))
+                        .strong(),
+                );
+                if let Some(p) = percent {
+                    ui.add_space(8.0);
+                    ui.add(
+                        egui::ProgressBar::new(f32::from(*p) / 100.0)
+                            .text(format!("{p}%"))
+                            .desired_width(320.0),
+                    );
+                } else {
+                    ui.add_space(8.0);
+                    ui.spinner();
+                }
+            }
+            ModelDownloadState::Failed(err) => {
+                ui.colored_label(Color32::from_rgb(160, 60, 40), err);
+                ui.add_space(12.0);
+                if big_button(ui, t.t("retry"), Color32::from_rgb(40, 110, 180)).clicked() {
+                    self.engine.handle(Command::StartModelDownload);
+                }
+            }
+        }
+
+        if let Some(note) = self.engine.model_download_note() {
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new(note)
+                    .font(FontId::proportional(18.0))
+                    .color(Color32::from_rgb(30, 120, 60)),
+            );
+        }
     }
 
     fn ui_exercise(&mut self, ui: &mut egui::Ui) {
