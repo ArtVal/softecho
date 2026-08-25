@@ -26,6 +26,8 @@ pub enum Screen {
     SpeechMap,
     /// Прогресс: тренд занятий, сводка карты, повторная диагностика.
     ProgressReport,
+    /// Редактор пользовательского набора.
+    PackEditor,
     /// Разминка: схемы + ссылки на внешние видео (не упражнение).
     Warmup,
     Dictaphone,
@@ -59,6 +61,19 @@ pub enum Command {
     /// Отчёт о прогрессе (тренд + сводка + повторная диагностика).
     OpenProgress,
     LeaveProgress,
+    /// Редактор набора (копия в данные пользователя).
+    OpenPackEditor,
+    LeavePackEditor,
+    /// Сделать редактируемую копию текущего набора и открыть редактор.
+    ClonePackForEdit,
+    EditorDisable(usize),
+    EditorEnable(usize),
+    EditorAddReadAloud {
+        prompt: String,
+        text: String,
+        stage: ExerciseStage,
+    },
+    EditorSave,
     /// Разминка перед занятием (схемы + внешние ссылки).
     OpenWarmup,
     LeaveWarmup,

@@ -13,6 +13,9 @@ use eframe::egui::{self, Color32, FontId, OpenUrl, RichText};
 
 pub struct UiApp {
     engine: Engine,
+    editor_prompt: String,
+    editor_text: String,
+    editor_stage: ExerciseStage,
 }
 
 impl UiApp {
@@ -20,6 +23,9 @@ impl UiApp {
         apply_theme(&cc.egui_ctx);
         Self {
             engine: Engine::new(),
+            editor_prompt: "Скажите".into(),
+            editor_text: String::new(),
+            editor_stage: ExerciseStage::Word,
         }
     }
 }
@@ -68,6 +74,9 @@ impl eframe::App for UiApp {
                 }
                 Screen::ProgressReport => {
                     screen_scroll(ui, "progress", |ui| self.ui_progress_report(ui))
+                }
+                Screen::PackEditor => {
+                    screen_scroll(ui, "pack_ed", |ui| self.ui_pack_editor(ui))
                 }
                 Screen::Warmup => screen_scroll(ui, "warmup", |ui| self.ui_warmup(ui)),
                 Screen::Dictaphone => self.ui_dictaphone(ui),
@@ -186,14 +195,26 @@ impl UiApp {
                 let selected = entry.id == current;
                 let fill = if selected {
                     Color32::from_rgb(40, 130, 90)
+                } else if entry.editable {
+                    Color32::from_rgb(70, 110, 140)
                 } else {
                     Color32::from_rgb(40, 110, 180)
                 };
-                if big_button(ui, &entry.title, fill).clicked() {
+                let label = if entry.editable {
+                    format!("{} · мой", entry.title)
+                } else {
+                    entry.title.clone()
+                };
+                if big_button(ui, &label, fill).clicked() {
                     self.engine.handle(Command::SetPack(entry.id));
                 }
-                ui.add_space(12.0);
+                ui.add_space(10.0);
             }
+            ui.add_space(12.0);
+            if big_button(ui, "Редактор набора", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenPackEditor);
+            }
+            ui.add_space(12.0);
         });
     }
 
@@ -336,6 +357,229 @@ impl UiApp {
                     ui.add_space(4.0);
                 }
             }
+        });
+    }
+
+    fn ui_pack_editor(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            ui.add_space(16.0);
+            ui.label(
+                RichText::new("Редактор набора")
+                    .font(FontId::proportional(36.0))
+                    .strong(),
+            );
+            ui.add_space(8.0);
+
+            if let Some(err) = self.engine.load_error() {
+                ui.colored_label(Color32::from_rgb(160, 60, 40), err);
+                ui.add_space(12.0);
+            }
+
+            if self.engine.pack_editor().is_none() {
+                ui.label(
+                    RichText::new(format!("Сейчас: {}", self.engine.pack().title))
+                        .font(FontId::proportional(20.0)),
+                );
+                ui.add_space(12.0);
+                ui.label(
+                    RichText::new(
+                        "Встроенные наборы только для чтения. Сделайте копию — она сохранится на этом компьютере.",
+                    )
+                    .font(FontId::proportional(17.0))
+                    .color(Color32::DARK_GRAY),
+                );
+                ui.add_space(20.0);
+                if big_button(ui, "Сделать копию и править", Color32::from_rgb(40, 130, 90))
+                    .clicked()
+                {
+                    self.engine.handle(Command::ClonePackForEdit);
+                }
+                ui.add_space(8.0);
+                if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
+                    self.engine.handle(Command::LeavePackEditor);
+                }
+                return;
+            }
+
+            let (pack_id, title, active_n, disabled_n, err, note) = {
+                let ed = self.engine.pack_editor().unwrap();
+                (
+                    ed.pack_id.clone(),
+                    ed.draft.title.clone(),
+                    ed.draft.exercises.len(),
+                    ed.draft.disabled.len(),
+                    ed.error.clone(),
+                    ed.note.clone(),
+                )
+            };
+
+            ui.label(
+                RichText::new(format!("{title}"))
+                    .font(FontId::proportional(22.0))
+                    .strong()
+                    .color(Color32::from_rgb(40, 70, 100)),
+            );
+            ui.label(
+                RichText::new(format!("Файл: {pack_id}.json · активно {active_n}, выкл. {disabled_n}"))
+                    .font(FontId::proportional(15.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            if let Some(err) = err {
+                ui.add_space(8.0);
+                ui.colored_label(Color32::from_rgb(160, 60, 40), err);
+            }
+            if let Some(note) = note {
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new(note)
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::from_rgb(30, 120, 60)),
+                );
+            }
+
+            ui.add_space(16.0);
+            ui.label(
+                RichText::new("Активные")
+                    .font(FontId::proportional(22.0))
+                    .strong(),
+            );
+            ui.add_space(8.0);
+            let active_labels: Vec<(usize, String)> = self
+                .engine
+                .pack_editor()
+                .map(|ed| {
+                    ed.draft
+                        .exercises
+                        .iter()
+                        .enumerate()
+                        .map(|(i, ex)| {
+                            let label = ex
+                                .map_label()
+                                .or_else(|| ex.target_text().map(|s| s.to_string()))
+                                .unwrap_or_else(|| format!("#{}", i + 1));
+                            (i, format!("{} · {}", ex.stage().label_ru(), label))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            for (i, label) in active_labels {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(&label)
+                            .font(FontId::proportional(16.0))
+                            .color(Color32::from_rgb(20, 40, 60)),
+                    );
+                    if ui.button("Выкл").clicked() {
+                        self.engine.handle(Command::EditorDisable(i));
+                    }
+                });
+                ui.add_space(4.0);
+            }
+
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new("Отключённые")
+                    .font(FontId::proportional(22.0))
+                    .strong(),
+            );
+            ui.add_space(8.0);
+            let disabled_labels: Vec<(usize, String)> = self
+                .engine
+                .pack_editor()
+                .map(|ed| {
+                    ed.draft
+                        .disabled
+                        .iter()
+                        .enumerate()
+                        .map(|(i, ex)| {
+                            let label = ex
+                                .map_label()
+                                .or_else(|| ex.target_text().map(|s| s.to_string()))
+                                .unwrap_or_else(|| format!("#{}", i + 1));
+                            (i, format!("{} · {}", ex.stage().label_ru(), label))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if disabled_labels.is_empty() {
+                ui.label(
+                    RichText::new("Пусто")
+                        .font(FontId::proportional(16.0))
+                        .color(Color32::DARK_GRAY),
+                );
+            } else {
+                for (i, label) in disabled_labels {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(&label)
+                                .font(FontId::proportional(16.0))
+                                .color(Color32::DARK_GRAY),
+                        );
+                        if ui.button("Вкл").clicked() {
+                            self.engine.handle(Command::EditorEnable(i));
+                        }
+                    });
+                    ui.add_space(4.0);
+                }
+            }
+
+            ui.add_space(20.0);
+            ui.label(
+                RichText::new("Добавить «прочитать вслух»")
+                    .font(FontId::proportional(22.0))
+                    .strong(),
+            );
+            ui.add_space(8.0);
+            ui.label(RichText::new("Подсказка").font(FontId::proportional(15.0)));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.editor_prompt)
+                    .font(FontId::proportional(18.0))
+                    .desired_width(280.0),
+            );
+            ui.add_space(6.0);
+            ui.label(RichText::new("Текст").font(FontId::proportional(15.0)));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.editor_text)
+                    .font(FontId::proportional(18.0))
+                    .desired_width(280.0),
+            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                for st in [
+                    ExerciseStage::Sound,
+                    ExerciseStage::Syllable,
+                    ExerciseStage::Word,
+                    ExerciseStage::Phrase,
+                    ExerciseStage::Twister,
+                ] {
+                    let selected = self.editor_stage == st;
+                    if ui
+                        .selectable_label(selected, st.label_ru())
+                        .clicked()
+                    {
+                        self.editor_stage = st;
+                    }
+                }
+            });
+            ui.add_space(10.0);
+            if big_button(ui, "Добавить", Color32::from_rgb(40, 110, 180)).clicked() {
+                self.engine.handle(Command::EditorAddReadAloud {
+                    prompt: self.editor_prompt.clone(),
+                    text: self.editor_text.clone(),
+                    stage: self.editor_stage,
+                });
+                self.editor_text.clear();
+            }
+
+            ui.add_space(20.0);
+            if big_button(ui, "Сохранить", Color32::from_rgb(40, 130, 90)).clicked() {
+                self.engine.handle(Command::EditorSave);
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Назад", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::LeavePackEditor);
+            }
+            ui.add_space(24.0);
         });
     }
 
@@ -669,6 +913,10 @@ impl UiApp {
             ui.add_space(8.0);
             if big_button(ui, "Прогресс", Color32::from_rgb(100, 80, 150)).clicked() {
                 self.engine.handle(Command::OpenProgress);
+            }
+            ui.add_space(8.0);
+            if big_button(ui, "Редактор набора", Color32::from_rgb(90, 100, 120)).clicked() {
+                self.engine.handle(Command::OpenPackEditor);
             }
             ui.add_space(8.0);
             ui.label(

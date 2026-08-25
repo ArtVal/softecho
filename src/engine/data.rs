@@ -3,7 +3,33 @@ use std::path::PathBuf;
 
 use directories::ProjectDirs;
 
-use super::exercise::{ExercisePack, Progress};
+use super::exercise::{Exercise, ExercisePack, Progress};
+
+/// Пользовательский файл набора: активные + отключённые.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EditablePack {
+    pub title: String,
+    pub exercises: Vec<Exercise>,
+    #[serde(default)]
+    pub disabled: Vec<Exercise>,
+}
+
+impl EditablePack {
+    pub fn from_pack(pack: ExercisePack) -> Self {
+        Self {
+            title: pack.title,
+            exercises: pack.exercises,
+            disabled: Vec::new(),
+        }
+    }
+
+    pub fn to_active_pack(&self) -> ExercisePack {
+        ExercisePack {
+            title: self.title.clone(),
+            exercises: self.exercises.clone(),
+        }
+    }
+}
 
 pub const DEFAULT_PACK_ID: &str = "starter";
 
@@ -63,11 +89,13 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
     },
 ];
 
-/// Краткое описание встроенного набора (для экрана выбора).
+/// Краткое описание набора (для экрана выбора).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackCatalogEntry {
     pub id: String,
     pub title: String,
+    /// Можно править в редакторе (пользовательский файл).
+    pub editable: bool,
 }
 
 pub fn list_builtin_packs() -> Vec<PackCatalogEntry> {
@@ -79,12 +107,60 @@ pub fn list_builtin_packs() -> Vec<PackCatalogEntry> {
                 .map(|pack| PackCatalogEntry {
                     id: entry.id.to_string(),
                     title: pack.title,
+                    editable: false,
                 })
         })
         .collect()
 }
 
+pub fn list_user_packs() -> Vec<PackCatalogEntry> {
+    let Ok(dir) = packs_dir() else {
+        return Vec::new();
+    };
+    let Ok(rd) = fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for ent in rd.flatten() {
+        let path = ent.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if let Ok(pack) = load_pack_file(stem, &path) {
+            out.push(PackCatalogEntry {
+                id: stem.to_string(),
+                title: pack.title,
+                editable: true,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.title.cmp(&b.title));
+    out
+}
+
+pub fn list_all_packs() -> Vec<PackCatalogEntry> {
+    let mut out = list_builtin_packs();
+    out.extend(list_user_packs());
+    out
+}
+
+pub fn is_user_pack(id: &str) -> bool {
+    packs_dir()
+        .ok()
+        .map(|d| d.join(format!("{id}.json")).is_file())
+        .unwrap_or(false)
+}
+
 pub fn load_pack(id: &str) -> Result<ExercisePack, String> {
+    if let Ok(dir) = packs_dir() {
+        let path = dir.join(format!("{id}.json"));
+        if path.is_file() {
+            return load_pack_file(id, &path);
+        }
+    }
     let Some(entry) = EMBEDDED_PACKS.iter().find(|p| p.id == id) else {
         return Err(format!("Неизвестный набор «{id}»"));
     };
@@ -92,10 +168,98 @@ pub fn load_pack(id: &str) -> Result<ExercisePack, String> {
 }
 
 fn load_pack_bytes(id: &str, bytes: &[u8]) -> Result<ExercisePack, String> {
-    let pack: ExercisePack = serde_json::from_slice(bytes)
+    // Builtin / user: лишнее поле `disabled` игнорируем через EditablePack.
+    let editable: EditablePack = serde_json::from_slice(bytes)
         .map_err(|e| format!("Не удалось разобрать набор «{id}»: {e}"))?;
+    let pack = editable.to_active_pack();
     validate_pack(&pack)?;
     Ok(pack)
+}
+
+fn load_pack_file(id: &str, path: &std::path::Path) -> Result<ExercisePack, String> {
+    let bytes = fs::read(path).map_err(|e| format!("Не удалось прочитать {path:?}: {e}"))?;
+    load_pack_bytes(id, &bytes)
+}
+
+pub fn load_editable_pack(id: &str) -> Result<EditablePack, String> {
+    if let Ok(dir) = packs_dir() {
+        let path = dir.join(format!("{id}.json"));
+        if path.is_file() {
+            let bytes =
+                fs::read(&path).map_err(|e| format!("Не удалось прочитать {path:?}: {e}"))?;
+            let editable: EditablePack = serde_json::from_slice(&bytes)
+                .map_err(|e| format!("Не удалось разобрать набор «{id}»: {e}"))?;
+            validate_editable(&editable)?;
+            return Ok(editable);
+        }
+    }
+    let pack = load_pack(id)?;
+    Ok(EditablePack::from_pack(pack))
+}
+
+pub fn save_user_pack(id: &str, editable: &EditablePack) -> Result<PathBuf, String> {
+    let id = sanitize_pack_id(id)?;
+    validate_editable(editable)?;
+    let dir = packs_dir()?;
+    let path = dir.join(format!("{id}.json"));
+    let bytes = serde_json::to_vec_pretty(editable)
+        .map_err(|e| format!("Не удалось сериализовать набор: {e}"))?;
+    fs::write(&path, bytes).map_err(|e| format!("Не удалось записать {path:?}: {e}"))?;
+    Ok(path)
+}
+
+/// Копия встроенного или текущего набора в каталог пользователя.
+pub fn clone_pack_to_user(source_id: &str, title: &str) -> Result<(String, EditablePack), String> {
+    let mut editable = load_editable_pack(source_id)?;
+    if !title.trim().is_empty() {
+        editable.title = title.trim().to_string();
+    } else if !editable.title.contains("(мой)") {
+        editable.title = format!("{} (мой)", editable.title);
+    }
+    let id = unique_user_pack_id(source_id)?;
+    save_user_pack(&id, &editable)?;
+    Ok((id, editable))
+}
+
+fn unique_user_pack_id(source_id: &str) -> Result<String, String> {
+    let base = sanitize_pack_id(&format!("my-{source_id}"))?;
+    if !is_user_pack(&base) && EMBEDDED_PACKS.iter().all(|p| p.id != base) {
+        return Ok(base);
+    }
+    for n in 2..1000 {
+        let id = format!("{base}-{n}");
+        if !is_user_pack(&id) {
+            return Ok(id);
+        }
+    }
+    Err("Слишком много копий набора".into())
+}
+
+pub fn sanitize_pack_id(raw: &str) -> Result<String, String> {
+    let s: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let s = s.trim_matches('-').to_string();
+    if s.is_empty() {
+        return Err("Пустой идентификатор набора".into());
+    }
+    if s.len() > 64 {
+        return Err("Слишком длинный идентификатор набора".into());
+    }
+    Ok(s)
+}
+
+pub fn packs_dir() -> Result<PathBuf, String> {
+    let dir = data_dir()?.join("packs");
+    fs::create_dir_all(&dir).map_err(|e| format!("Не удалось создать {dir:?}: {e}"))?;
+    Ok(dir)
 }
 
 pub fn load_active_pack(progress: &Progress) -> Result<ExercisePack, String> {
@@ -107,41 +271,53 @@ pub fn load_active_pack(progress: &Progress) -> Result<ExercisePack, String> {
 }
 
 fn validate_pack(pack: &ExercisePack) -> Result<(), String> {
-    use super::exercise::Exercise;
     if pack.exercises.is_empty() {
-        return Err("Набор упражнений пуст".into());
+        return Err("Набор упражнений пуст — включите хотя бы одно задание".into());
     }
     for (i, ex) in pack.exercises.iter().enumerate() {
-        match ex {
-            Exercise::ChooseWord {
-                options, answer, ..
-            } => {
-                if options.len() < 2 {
-                    return Err(format!("Упражнение {i}: мало вариантов"));
-                }
-                if !options.iter().any(|o| o == answer) {
-                    return Err(format!(
-                        "Упражнение {i}: ответ «{answer}» не входит в варианты"
-                    ));
-                }
+        validate_one(i, ex, "активное")?;
+    }
+    Ok(())
+}
+
+fn validate_editable(pack: &EditablePack) -> Result<(), String> {
+    validate_pack(&pack.to_active_pack())?;
+    for (i, ex) in pack.disabled.iter().enumerate() {
+        validate_one(i, ex, "отключённое")?;
+    }
+    Ok(())
+}
+
+fn validate_one(i: usize, ex: &Exercise, kind: &str) -> Result<(), String> {
+    match ex {
+        Exercise::ChooseWord {
+            options, answer, ..
+        } => {
+            if options.len() < 2 {
+                return Err(format!("Упражнение {kind} {i}: мало вариантов"));
             }
-            Exercise::BuildPhrase { words, answer, .. } => {
-                if words.is_empty() {
-                    return Err(format!("Упражнение {i}: нет слов"));
-                }
-                let joined = words.join(" ");
-                if super::exercise::normalize_phrase(&joined)
-                    != super::exercise::normalize_phrase(answer)
-                {
-                    return Err(format!(
-                        "Упражнение {i}: слова не совпадают с ответом «{answer}»"
-                    ));
-                }
+            if !options.iter().any(|o| o == answer) {
+                return Err(format!(
+                    "Упражнение {kind} {i}: ответ «{answer}» не входит в варианты"
+                ));
             }
-            Exercise::ReadAloud { text, .. } => {
-                if text.trim().is_empty() {
-                    return Err(format!("Упражнение {i}: пустой текст"));
-                }
+        }
+        Exercise::BuildPhrase { words, answer, .. } => {
+            if words.is_empty() {
+                return Err(format!("Упражнение {kind} {i}: нет слов"));
+            }
+            let joined = words.join(" ");
+            if super::exercise::normalize_phrase(&joined)
+                != super::exercise::normalize_phrase(answer)
+            {
+                return Err(format!(
+                    "Упражнение {kind} {i}: слова не совпадают с ответом «{answer}»"
+                ));
+            }
+        }
+        Exercise::ReadAloud { text, .. } => {
+            if text.trim().is_empty() {
+                return Err(format!("Упражнение {kind} {i}: пустой текст"));
             }
         }
     }
@@ -314,5 +490,35 @@ mod tests {
         save_dictaphone_text(&path, "итог").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "итог");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sanitize_pack_id_basic() {
+        assert_eq!(sanitize_pack_id("My Pack!").unwrap(), "my-pack");
+        assert!(sanitize_pack_id("???").is_err());
+    }
+
+    #[test]
+    fn editable_pack_roundtrip_keeps_disabled() {
+        use super::super::exercise::Exercise;
+        let editable = EditablePack {
+            title: "t".into(),
+            exercises: vec![Exercise::ReadAloud {
+                stage: Some(ExerciseStage::Word),
+                prompt: "p".into(),
+                text: "мама".into(),
+                speak: None,
+            }],
+            disabled: vec![Exercise::ReadAloud {
+                stage: Some(ExerciseStage::Word),
+                prompt: "p".into(),
+                text: "папа".into(),
+                speak: None,
+            }],
+        };
+        let bytes = serde_json::to_vec(&editable).unwrap();
+        let back: EditablePack = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(back.disabled.len(), 1);
+        assert_eq!(back.to_active_pack().exercises.len(), 1);
     }
 }

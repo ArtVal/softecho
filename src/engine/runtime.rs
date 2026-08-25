@@ -5,9 +5,10 @@ use super::asr::{
     create_recognizer, AsrStatus, ListenConfig, ListenEvent, SpeechRecognizer,
 };
 use super::data::{
-    append_dictaphone_text, list_builtin_packs, load_active_pack, load_pack, load_progress,
-    new_dictaphone_path, save_dictaphone_text, save_progress, user_data_dir, vosk_model_dir,
-    DEFAULT_PACK_ID, PackCatalogEntry,
+    append_dictaphone_text, clone_pack_to_user, is_user_pack, list_all_packs, load_active_pack,
+    load_editable_pack, load_pack, load_progress, new_dictaphone_path, save_dictaphone_text,
+    save_progress, save_user_pack, user_data_dir, vosk_model_dir, DEFAULT_PACK_ID, EditablePack,
+    PackCatalogEntry,
 };
 use super::exercise::{
     build_diagnosis_set, check_answer, infer_level, order_session_for_level_with_map, speech_matches,
@@ -133,6 +134,14 @@ pub struct Engine {
     model_download: ModelDownloadState,
     model_download_rx: Option<Receiver<DownloadMsg>>,
     model_download_note: Option<String>,
+    pack_editor: Option<PackEditorState>,
+}
+
+pub struct PackEditorState {
+    pub pack_id: String,
+    pub draft: EditablePack,
+    pub error: Option<String>,
+    pub note: Option<String>,
 }
 
 impl Engine {
@@ -179,6 +188,7 @@ impl Engine {
             model_download: ModelDownloadState::default(),
             model_download_rx: None,
             model_download_note: None,
+            pack_editor: None,
         }
     }
 
@@ -421,6 +431,141 @@ impl Engine {
                 self.screen = Screen::Home;
             }
             Err(e) => self.load_error = Some(e),
+        }
+    }
+
+    fn open_pack_editor(&mut self) {
+        self.abort_listen();
+        self.session = None;
+        let id = self.pack_id().to_string();
+        if !is_user_pack(&id) {
+            self.load_error = Some(
+                "Встроенный набор нельзя менять. Нажмите «Сделать копию» — правка будет в ваших данных."
+                    .into(),
+            );
+            self.screen = Screen::PackEditor;
+            self.pack_editor = None;
+            return;
+        }
+        match load_editable_pack(&id) {
+            Ok(draft) => {
+                self.load_error = None;
+                self.pack_editor = Some(PackEditorState {
+                    pack_id: id,
+                    draft,
+                    error: None,
+                    note: None,
+                });
+                self.screen = Screen::PackEditor;
+            }
+            Err(e) => {
+                self.load_error = Some(e);
+                self.pack_editor = None;
+                self.screen = Screen::Home;
+            }
+        }
+    }
+
+    fn clone_pack_for_edit(&mut self) {
+        self.abort_listen();
+        self.session = None;
+        let source = self.pack_id().to_string();
+        match clone_pack_to_user(&source, "") {
+            Ok((id, draft)) => {
+                self.pack = draft.to_active_pack();
+                self.progress.set_pack(&id);
+                self.persist_progress();
+                self.load_error = None;
+                self.pack_editor = Some(PackEditorState {
+                    pack_id: id,
+                    draft,
+                    error: None,
+                    note: Some("Копия сохранена. Можно править и сохранять.".into()),
+                });
+                self.screen = Screen::PackEditor;
+            }
+            Err(e) => {
+                self.load_error = Some(e);
+            }
+        }
+    }
+
+    fn editor_disable(&mut self, index: usize) {
+        let Some(ed) = self.pack_editor.as_mut() else {
+            return;
+        };
+        if index >= ed.draft.exercises.len() {
+            return;
+        }
+        if ed.draft.exercises.len() == 1 {
+            ed.error = Some("Нельзя отключить последнее активное задание.".into());
+            return;
+        }
+        let ex = ed.draft.exercises.remove(index);
+        ed.draft.disabled.push(ex);
+        ed.error = None;
+        ed.note = None;
+    }
+
+    fn editor_enable(&mut self, index: usize) {
+        let Some(ed) = self.pack_editor.as_mut() else {
+            return;
+        };
+        if index >= ed.draft.disabled.len() {
+            return;
+        }
+        let ex = ed.draft.disabled.remove(index);
+        ed.draft.exercises.push(ex);
+        ed.error = None;
+        ed.note = None;
+    }
+
+    fn editor_add_read_aloud(&mut self, prompt: String, text: String, stage: ExerciseStage) {
+        let Some(ed) = self.pack_editor.as_mut() else {
+            return;
+        };
+        let prompt = if prompt.trim().is_empty() {
+            "Скажите".into()
+        } else {
+            prompt.trim().to_string()
+        };
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            ed.error = Some("Введите текст задания.".into());
+            return;
+        }
+        ed.draft.exercises.push(Exercise::ReadAloud {
+            stage: Some(stage),
+            prompt,
+            text,
+            speak: None,
+        });
+        ed.error = None;
+        ed.note = Some("Задание добавлено — нажмите «Сохранить».".into());
+    }
+
+    fn editor_save(&mut self) {
+        let Some(ed) = self.pack_editor.as_ref() else {
+            return;
+        };
+        let id = ed.pack_id.clone();
+        let draft = ed.draft.clone();
+        match save_user_pack(&id, &draft) {
+            Ok(_) => {
+                self.pack = draft.to_active_pack();
+                if let Some(ed) = self.pack_editor.as_mut() {
+                    ed.error = None;
+                    ed.note = Some("Сохранено.".into());
+                    ed.draft = draft;
+                }
+                self.load_error = None;
+            }
+            Err(e) => {
+                if let Some(ed) = self.pack_editor.as_mut() {
+                    ed.error = Some(e);
+                    ed.note = None;
+                }
+            }
         }
     }
 
@@ -1053,6 +1198,7 @@ impl Engine {
             Command::GoHome => {
                 self.abort_listen();
                 self.session = None;
+                self.pack_editor = None;
                 self.screen = Screen::Home;
             }
             Command::StartSession => {
@@ -1099,6 +1245,20 @@ impl Engine {
             Command::LeaveProgress => {
                 self.screen = Screen::Home;
             }
+            Command::OpenPackEditor => self.open_pack_editor(),
+            Command::LeavePackEditor => {
+                self.pack_editor = None;
+                self.screen = Screen::Home;
+            }
+            Command::ClonePackForEdit => self.clone_pack_for_edit(),
+            Command::EditorDisable(i) => self.editor_disable(i),
+            Command::EditorEnable(i) => self.editor_enable(i),
+            Command::EditorAddReadAloud {
+                prompt,
+                text,
+                stage,
+            } => self.editor_add_read_aloud(prompt, text, stage),
+            Command::EditorSave => self.editor_save(),
             Command::OpenWarmup => {
                 self.abort_listen();
                 self.session = None;
@@ -1193,7 +1353,11 @@ impl Engine {
     }
 
     pub fn pack_catalog(&self) -> Vec<PackCatalogEntry> {
-        list_builtin_packs()
+        list_all_packs()
+    }
+
+    pub fn pack_editor(&self) -> Option<&PackEditorState> {
+        self.pack_editor.as_ref()
     }
 
     pub fn progress(&self) -> &Progress {
@@ -1662,6 +1826,16 @@ mod tests {
         let text = eng.progress_report_text();
         assert!(text.contains("SoftEcho"));
         eng.handle(Command::LeaveProgress);
+        assert!(matches!(eng.screen(), Screen::Home));
+    }
+
+    #[test]
+    fn open_pack_editor_builtin_prompts_clone() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::OpenPackEditor);
+        assert!(matches!(eng.screen(), Screen::PackEditor));
+        assert!(eng.pack_editor().is_none());
+        eng.handle(Command::LeavePackEditor);
         assert!(matches!(eng.screen(), Screen::Home));
     }
 
