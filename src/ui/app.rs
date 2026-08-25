@@ -766,7 +766,25 @@ impl UiApp {
             }
             ui.add_space(8.0);
             if big_button(ui, t.t("copy_report"), Color32::from_rgb(60, 100, 140)).clicked() {
-                ui.ctx().copy_text(report);
+                ui.ctx().copy_text(report.clone());
+            }
+            ui.add_space(8.0);
+            if big_button(ui, t.t("export_report"), Color32::from_rgb(40, 110, 180)).clicked() {
+                self.engine.handle(Command::ExportProgressReport);
+            }
+            if let Some(note) = self.engine.report_export_note() {
+                ui.add_space(10.0);
+                let failed = note.starts_with(t.t("export_failed"));
+                let color = if failed {
+                    Color32::from_rgb(160, 60, 40)
+                } else {
+                    Color32::from_rgb(30, 120, 60)
+                };
+                ui.label(
+                    RichText::new(note)
+                        .font(FontId::proportional(15.0))
+                        .color(color),
+                );
             }
             ui.add_space(8.0);
             if big_button(ui, t.t("back"), Color32::from_rgb(90, 100, 120)).clicked() {
@@ -903,6 +921,23 @@ impl UiApp {
             ui.add_space(12.0);
             if big_button(ui, t.t("speech_map"), Color32::from_rgb(100, 80, 150)).clicked() {
                 self.engine.handle(Command::OpenSpeechMap);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, t.t("export_report"), Color32::from_rgb(40, 110, 180)).clicked() {
+                self.engine.handle(Command::ExportProgressReport);
+            }
+            if let Some(note) = self.engine.report_export_note() {
+                ui.add_space(10.0);
+                let color = if note.starts_with(t.t("export_failed")) {
+                    Color32::from_rgb(160, 60, 40)
+                } else {
+                    Color32::from_rgb(30, 120, 60)
+                };
+                ui.label(
+                    RichText::new(note)
+                        .font(FontId::proportional(15.0))
+                        .color(color),
+                );
             }
             ui.add_space(12.0);
             if big_button(ui, t.t("choose_other"), Color32::from_rgb(90, 100, 120)).clicked() {
@@ -1854,6 +1889,23 @@ impl UiApp {
             ui.add_space(12.0);
             if big_button(ui, t.t("speech_map"), Color32::from_rgb(100, 80, 150)).clicked() {
                 self.engine.handle(Command::OpenSpeechMap);
+            }
+            ui.add_space(12.0);
+            if big_button(ui, t.t("export_report"), Color32::from_rgb(40, 110, 180)).clicked() {
+                self.engine.handle(Command::ExportProgressReport);
+            }
+            if let Some(note) = self.engine.report_export_note() {
+                ui.add_space(10.0);
+                let color = if note.starts_with(t.t("export_failed")) {
+                    Color32::from_rgb(160, 60, 40)
+                } else {
+                    Color32::from_rgb(30, 120, 60)
+                };
+                ui.label(
+                    RichText::new(note)
+                        .font(FontId::proportional(15.0))
+                        .color(color),
+                );
             }
         });
     }

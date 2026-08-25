@@ -6,9 +6,9 @@ use super::asr::{
 };
 use super::data::{
     append_dictaphone_text, clone_pack_to_user, is_user_pack, list_packs_for, load_active_pack,
-    load_editable_pack, load_pack, load_progress, new_dictaphone_path, pack_matches_language,
-    save_dictaphone_text, save_progress, save_user_pack, user_data_dir, vosk_model_dir,
-    DEFAULT_PACK_ID, EditablePack, PackCatalogEntry,
+    load_editable_pack, load_pack, load_progress, new_dictaphone_path, new_report_path,
+    pack_matches_language, save_dictaphone_text, save_progress, save_report_text, save_user_pack,
+    user_data_dir, vosk_model_dir, DEFAULT_PACK_ID, EditablePack, PackCatalogEntry,
 };
 use super::exercise::{
     build_diagnosis_set, check_answer, infer_level, order_session_for_level_with_map, speech_matches,
@@ -136,6 +136,8 @@ pub struct Engine {
     model_download_rx: Option<Receiver<DownloadMsg>>,
     model_download_note: Option<String>,
     pack_editor: Option<PackEditorState>,
+    /// Результат последнего экспорта отчёта (путь или ошибка).
+    report_export_note: Option<String>,
 }
 
 pub struct PackEditorState {
@@ -197,6 +199,7 @@ impl Engine {
             model_download_rx: None,
             model_download_note: None,
             pack_editor: None,
+            report_export_note: None,
         }
     }
 
@@ -1241,6 +1244,7 @@ impl Engine {
                 self.abort_listen();
                 self.session = None;
                 self.pack_editor = None;
+                self.report_export_note = None;
                 self.screen = Screen::Home;
             }
             Command::StartSession => {
@@ -1282,9 +1286,11 @@ impl Engine {
             Command::OpenProgress => {
                 self.abort_listen();
                 self.session = None;
+                self.report_export_note = None;
                 self.screen = Screen::ProgressReport;
             }
             Command::LeaveProgress => {
+                self.report_export_note = None;
                 self.screen = Screen::Home;
             }
             Command::OpenPackEditor => self.open_pack_editor(),
@@ -1318,6 +1324,7 @@ impl Engine {
                 self.progress.set_simple_mode(on);
                 self.persist_progress();
             }
+            Command::ExportProgressReport => self.export_progress_report(),
             Command::OpenDictaphone => {
                 self.abort_listen();
                 self.dictaphone = DictaphoneState::default();
@@ -1522,6 +1529,33 @@ impl Engine {
             &self.speech_map_entries(),
             self.progress.language,
         )
+    }
+
+    fn export_progress_report(&mut self) {
+        let text = self.progress_report_text();
+        match new_report_path().and_then(|path| {
+            save_report_text(&path, &text)?;
+            Ok(path)
+        }) {
+            Ok(path) => {
+                let msg = format!(
+                    "{}: {}",
+                    super::i18n::tr(self.progress.language, "export_saved"),
+                    path.display()
+                );
+                self.report_export_note = Some(msg);
+            }
+            Err(e) => {
+                self.report_export_note = Some(format!(
+                    "{}: {e}",
+                    super::i18n::tr(self.progress.language, "export_failed")
+                ));
+            }
+        }
+    }
+
+    pub fn report_export_note(&self) -> Option<&str> {
+        self.report_export_note.as_deref()
     }
 
     pub fn asr_status(&self) -> AsrStatus {
@@ -1887,6 +1921,30 @@ mod tests {
         assert!(text.contains("SoftEcho"));
         eng.handle(Command::LeaveProgress);
         assert!(matches!(eng.screen(), Screen::Home));
+    }
+
+    #[test]
+    fn export_progress_report_writes_file() {
+        let tmp = std::env::temp_dir().join(format!("softecho-report-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::env::set_var("XDG_DATA_HOME", &tmp);
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::ExportProgressReport);
+        let note = eng.report_export_note().expect("note").to_string();
+        assert!(
+            note.contains("Отчёт сохранён") || note.contains("Report saved"),
+            "{note}"
+        );
+        assert!(note.contains("softecho-report_") && note.contains(".txt"), "{note}");
+        let path = note
+            .split(": ")
+            .nth(1)
+            .expect("path after colon");
+        let body = std::fs::read_to_string(path).expect("report file");
+        assert!(body.contains("SoftEcho"));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::remove_var("XDG_DATA_HOME");
     }
 
     #[test]

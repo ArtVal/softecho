@@ -330,6 +330,12 @@ pub fn tr(lang: AppLanguage, key: &str) -> &'static str {
         (AppLanguage::En, "map_by_stage") => "Map by stage",
         (AppLanguage::Ru, "map_empty") => "В наборе пока нет целей для карты.",
         (AppLanguage::En, "map_empty") => "No map targets in this pack yet.",
+        (AppLanguage::Ru, "export_report") => "Сохранить отчёт в файл",
+        (AppLanguage::En, "export_report") => "Save report to file",
+        (AppLanguage::Ru, "export_saved") => "Отчёт сохранён",
+        (AppLanguage::En, "export_saved") => "Report saved",
+        (AppLanguage::Ru, "export_failed") => "Не удалось сохранить отчёт",
+        (AppLanguage::En, "export_failed") => "Could not save report",
         (AppLanguage::Ru, "copy_report") => "Скопировать отчёт",
         (AppLanguage::En, "copy_report") => "Copy report",
 

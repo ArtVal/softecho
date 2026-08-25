@@ -83,6 +83,8 @@ pub enum Command {
     SetLanguage(crate::engine::i18n::AppLanguage),
     /// Упрощённый режим (крупный UI + подсказки).
     SetSimpleMode(bool),
+    /// Сохранить текстовый отчёт в каталог данных (для родственника / логопеда).
+    ExportProgressReport,
     OpenDictaphone,
     OpenSettings,
     LeaveSettings,

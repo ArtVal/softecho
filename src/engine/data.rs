@@ -409,6 +409,25 @@ pub fn save_progress(progress: &Progress) -> Result<(), String> {
     fs::write(&path, bytes).map_err(|e| format!("Не удалось записать {path:?}: {e}"))
 }
 
+/// Новый файл отчёта: `reports/softecho-report_YYYY….txt`.
+pub fn new_report_path() -> Result<PathBuf, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let dir = data_dir()?.join("reports");
+    fs::create_dir_all(&dir).map_err(|e| format!("Не удалось создать {dir:?}: {e}"))?;
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    Ok(dir.join(format!("softecho-report_{secs}.txt")))
+}
+
+pub fn save_report_text(path: &std::path::Path, text: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Не удалось создать {parent:?}: {e}"))?;
+    }
+    fs::write(path, text).map_err(|e| format!("Не удалось записать {path:?}: {e}"))
+}
+
 /// Новый файл для длинного диктофона: `dictaphone_YYYYMMDD_HHMMSS.txt`.
 pub fn new_dictaphone_path() -> Result<PathBuf, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
