@@ -680,6 +680,9 @@ pub struct Progress {
     /// Хвост последних занятий (для тренда на экране прогресса).
     #[serde(default)]
     pub session_history: Vec<SessionRecord>,
+    /// Язык интерфейса / наборов / модели Vosk.
+    #[serde(default)]
+    pub language: crate::engine::i18n::AppLanguage,
 }
 
 /// Одна завершённая практика (не диагностика).
@@ -709,6 +712,10 @@ impl Progress {
 
     pub fn set_pack(&mut self, pack_id: &str) {
         self.pack_id = Some(pack_id.to_string());
+    }
+
+    pub fn set_language(&mut self, language: crate::engine::i18n::AppLanguage) {
+        self.language = language;
     }
 
     pub fn record_speech(&mut self, exercise: &Exercise, correct: bool) {

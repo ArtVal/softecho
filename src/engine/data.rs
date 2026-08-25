@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use directories::ProjectDirs;
 
 use super::exercise::{Exercise, ExercisePack, Progress};
+use super::i18n::AppLanguage;
 
 /// Пользовательский файл набора: активные + отключённые.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -35,59 +36,92 @@ pub const DEFAULT_PACK_ID: &str = "starter";
 
 struct EmbeddedPack {
     id: &'static str,
+    language: AppLanguage,
     bytes: &'static [u8],
 }
 
 const EMBEDDED_PACKS: &[EmbeddedPack] = &[
     EmbeddedPack {
         id: "starter",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/starter.json"),
     },
     EmbeddedPack {
+        id: "starter_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/starter_en.json"),
+    },
+    EmbeddedPack {
         id: "sounds",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/sounds.json"),
     },
     EmbeddedPack {
         id: "syllables",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/syllables.json"),
     },
     EmbeddedPack {
         id: "odk",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/odk.json"),
     },
     EmbeddedPack {
         id: "rhymes",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/rhymes.json"),
     },
     EmbeddedPack {
         id: "twisters",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/twisters.json"),
     },
     EmbeddedPack {
         id: "daily",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/daily.json"),
     },
     EmbeddedPack {
         id: "greetings",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/greetings.json"),
     },
     EmbeddedPack {
         id: "family",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/family.json"),
     },
     EmbeddedPack {
         id: "body",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/body.json"),
     },
     EmbeddedPack {
         id: "food",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/food.json"),
     },
     EmbeddedPack {
         id: "transport",
+        language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/transport.json"),
     },
 ];
+
+/// Язык встроенного набора; пользовательские — без привязки (видны всегда).
+pub fn builtin_pack_language(id: &str) -> Option<AppLanguage> {
+    EMBEDDED_PACKS
+        .iter()
+        .find(|p| p.id == id)
+        .map(|p| p.language)
+}
+
+pub fn pack_matches_language(id: &str, language: AppLanguage) -> bool {
+    match builtin_pack_language(id) {
+        Some(pack_lang) => pack_lang == language,
+        None => true,
+    }
+}
 
 /// Краткое описание набора (для экрана выбора).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,8 +133,16 @@ pub struct PackCatalogEntry {
 }
 
 pub fn list_builtin_packs() -> Vec<PackCatalogEntry> {
+    list_builtin_packs_for(None)
+}
+
+pub fn list_builtin_packs_for(language: Option<AppLanguage>) -> Vec<PackCatalogEntry> {
     EMBEDDED_PACKS
         .iter()
+        .filter(|entry| match language {
+            Some(lang) => entry.language == lang,
+            None => true,
+        })
         .filter_map(|entry| {
             load_pack_bytes(entry.id, entry.bytes)
                 .ok()
@@ -142,7 +184,11 @@ pub fn list_user_packs() -> Vec<PackCatalogEntry> {
 }
 
 pub fn list_all_packs() -> Vec<PackCatalogEntry> {
-    let mut out = list_builtin_packs();
+    list_packs_for(None)
+}
+
+pub fn list_packs_for(language: Option<AppLanguage>) -> Vec<PackCatalogEntry> {
+    let mut out = list_builtin_packs_for(language);
     out.extend(list_user_packs());
     out
 }
@@ -263,10 +309,13 @@ pub fn packs_dir() -> Result<PathBuf, String> {
 }
 
 pub fn load_active_pack(progress: &Progress) -> Result<ExercisePack, String> {
-    let id = progress
-        .pack_id
-        .as_deref()
-        .unwrap_or(DEFAULT_PACK_ID);
+    let fallback = progress.language.default_pack_id();
+    let id = progress.pack_id.as_deref().unwrap_or(fallback);
+    let id = if pack_matches_language(id, progress.language) {
+        id
+    } else {
+        fallback
+    };
     load_pack(id)
 }
 
@@ -394,22 +443,25 @@ pub fn save_dictaphone_text(path: &std::path::Path, text: &str) -> Result<(), St
 }
 
 /// Каталог модели Vosk: рядом с exe (portable), cwd, или данные пользователя.
-pub fn vosk_model_dir() -> Option<PathBuf> {
+pub fn vosk_model_dir(language: AppLanguage) -> Option<PathBuf> {
+    let name = language.vosk_model_dir_name();
     let mut candidates = Vec::new();
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            candidates.push(dir.join("vosk-model-small-ru-0.22"));
-            candidates.push(dir.join("assets/vosk/vosk-model-small-ru-0.22"));
-            candidates.push(dir.join("vosk/vosk-model-small-ru-0.22"));
+            candidates.push(dir.join(name));
+            candidates.push(dir.join(format!("assets/vosk/{name}")));
+            candidates.push(dir.join(format!("vosk/{name}")));
         }
     }
 
-    candidates.push(PathBuf::from("assets/vosk/model"));
-    candidates.push(PathBuf::from("assets/vosk/vosk-model-small-ru-0.22"));
+    if language == AppLanguage::Ru {
+        candidates.push(PathBuf::from("assets/vosk/model"));
+    }
+    candidates.push(PathBuf::from(format!("assets/vosk/{name}")));
 
     if let Ok(dir) = data_dir() {
-        candidates.push(dir.join("vosk-model-small-ru-0.22"));
+        candidates.push(dir.join(name));
     }
 
     candidates.into_iter().find(|p| p.is_dir())
@@ -422,12 +474,18 @@ mod tests {
 
     #[test]
     fn all_builtin_packs_load() {
-        for entry in list_builtin_packs() {
+        for entry in list_all_packs() {
             let pack = load_pack(&entry.id).expect("набор должен разбираться");
             assert_eq!(pack.title, entry.title);
             assert!(!pack.exercises.is_empty());
         }
-        assert!(list_builtin_packs().len() >= 12);
+        assert!(list_all_packs().len() >= 13);
+        assert!(list_packs_for(Some(AppLanguage::En))
+            .iter()
+            .any(|e| e.id == "starter_en"));
+        assert!(!list_packs_for(Some(AppLanguage::En))
+            .iter()
+            .any(|e| e.id == "daily"));
     }
 
     #[test]

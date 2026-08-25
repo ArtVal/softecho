@@ -10,6 +10,7 @@ pub mod asr;
 pub mod audio_pipe;
 pub mod data;
 pub mod exercise;
+pub mod i18n;
 pub mod playback;
 pub mod protocol;
 pub mod runtime;
@@ -20,5 +21,6 @@ pub mod warmup;
 
 pub use asr::AsrStatus;
 pub use exercise::{CheckResult, Exercise, ExerciseStage, SpeechRating, UserAnswer};
+pub use i18n::AppLanguage;
 pub use protocol::{Command, ModelDownloadState, Screen};
 pub use runtime::Engine;

@@ -5,16 +5,17 @@ use super::asr::{
     create_recognizer, AsrStatus, ListenConfig, ListenEvent, SpeechRecognizer,
 };
 use super::data::{
-    append_dictaphone_text, clone_pack_to_user, is_user_pack, list_all_packs, load_active_pack,
-    load_editable_pack, load_pack, load_progress, new_dictaphone_path, save_dictaphone_text,
-    save_progress, save_user_pack, user_data_dir, vosk_model_dir, DEFAULT_PACK_ID, EditablePack,
-    PackCatalogEntry,
+    append_dictaphone_text, clone_pack_to_user, is_user_pack, list_packs_for, load_active_pack,
+    load_editable_pack, load_pack, load_progress, new_dictaphone_path, pack_matches_language,
+    save_dictaphone_text, save_progress, save_user_pack, user_data_dir, vosk_model_dir,
+    DEFAULT_PACK_ID, EditablePack, PackCatalogEntry,
 };
 use super::exercise::{
     build_diagnosis_set, check_answer, infer_level, order_session_for_level_with_map, speech_matches,
     twister_unlocked, pack_speech_entries, CheckResult, Exercise, ExercisePack, ExerciseStage,
     Progress, SpeechMapEntry, UserAnswer,
 };
+use super::i18n::{AppLanguage, UiText};
 use super::playback::play_pcm_16k;
 use std::collections::{HashMap, HashSet};
 use super::protocol::{Command, ModelDownloadState, Screen, TickResult};
@@ -146,14 +147,21 @@ pub struct PackEditorState {
 
 impl Engine {
     pub fn new() -> Self {
-        Self::create(vosk_model_dir())
+        let language = load_progress().language;
+        Self::create(vosk_model_dir(language))
     }
 
     fn create(model: Option<std::path::PathBuf>) -> Self {
-        let progress = load_progress();
+        let mut progress = load_progress();
+        let fallback = progress.language.default_pack_id();
+        if let Some(id) = progress.pack_id.clone() {
+            if !pack_matches_language(&id, progress.language) {
+                progress.set_pack(fallback);
+            }
+        }
         let (pack, load_error) = match load_active_pack(&progress) {
             Ok(p) => (p, None),
-            Err(e) => match load_pack(DEFAULT_PACK_ID) {
+            Err(e) => match load_pack(fallback).or_else(|_| load_pack(DEFAULT_PACK_ID)) {
                 Ok(p) => (p, Some(e)),
                 Err(e2) => (
                     ExercisePack {
@@ -200,10 +208,35 @@ impl Engine {
 
     fn reload_recognizer(&mut self) {
         self.abort_listen();
-        let model = vosk_model_dir();
+        let model = vosk_model_dir(self.progress.language);
         if let Ok(mut r) = self.recognizer.lock() {
             *r = create_recognizer(model.as_deref());
         }
+    }
+
+    fn set_language(&mut self, language: AppLanguage) {
+        if self.progress.language == language {
+            return;
+        }
+        self.abort_listen();
+        self.session = None;
+        self.progress.set_language(language);
+        let fallback = language.default_pack_id();
+        let current = self.pack_id().to_string();
+        if !pack_matches_language(&current, language) {
+            match load_pack(fallback) {
+                Ok(pack) => {
+                    self.pack = pack;
+                    self.progress.set_pack(fallback);
+                    self.load_error = None;
+                }
+                Err(e) => self.load_error = Some(e),
+            }
+        }
+        self.reload_recognizer();
+        self.model_download = ModelDownloadState::Idle;
+        self.model_download_note = None;
+        self.persist_progress();
     }
 
     fn start_model_download(&mut self) {
@@ -226,6 +259,7 @@ impl Engine {
             }
         };
 
+        let language = self.progress.language;
         let (tx, rx) = mpsc::channel();
         self.model_download_rx = Some(rx);
         self.model_download = ModelDownloadState::Working {
@@ -233,7 +267,7 @@ impl Engine {
             percent: None,
         };
         self.model_download_note = None;
-        spawn_model_download(dest, tx);
+        spawn_model_download(dest, language, tx);
     }
 
     fn poll_model_download(&mut self, tick: &mut TickResult) {
@@ -1271,6 +1305,7 @@ impl Engine {
                 self.abort_listen();
                 self.set_level(level);
             }
+            Command::SetLanguage(language) => self.set_language(language),
             Command::OpenDictaphone => {
                 self.abort_listen();
                 self.dictaphone = DictaphoneState::default();
@@ -1349,11 +1384,19 @@ impl Engine {
         self.progress
             .pack_id
             .as_deref()
-            .unwrap_or(DEFAULT_PACK_ID)
+            .unwrap_or_else(|| self.progress.language.default_pack_id())
     }
 
     pub fn pack_catalog(&self) -> Vec<PackCatalogEntry> {
-        list_all_packs()
+        list_packs_for(Some(self.progress.language))
+    }
+
+    pub fn language(&self) -> AppLanguage {
+        self.progress.language
+    }
+
+    pub fn ui_text(&self) -> UiText {
+        UiText::new(self.progress.language)
     }
 
     pub fn pack_editor(&self) -> Option<&PackEditorState> {
@@ -2082,6 +2125,25 @@ mod tests {
         eng.handle(Command::LeaveSettings);
         assert!(matches!(eng.screen(), Screen::Home));
         assert!(eng.model_download_note().is_none());
+    }
+
+    #[test]
+    fn set_language_switches_default_pack() {
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::SetPack("daily".into()));
+        assert_eq!(eng.pack_id(), "daily");
+        eng.handle(Command::OpenSettings);
+        eng.handle(Command::SetLanguage(AppLanguage::En));
+        assert_eq!(eng.language(), AppLanguage::En);
+        assert_eq!(eng.pack_id(), "starter_en");
+        assert!(eng.pack().title.contains("Sounds") || eng.pack().title.contains("syllables"));
+        assert!(matches!(eng.screen(), Screen::Settings));
+        let ids: Vec<_> = eng.pack_catalog().into_iter().map(|e| e.id).collect();
+        assert!(ids.contains(&"starter_en".into()));
+        assert!(!ids.contains(&"daily".into()));
+        eng.handle(Command::SetLanguage(AppLanguage::Ru));
+        assert_eq!(eng.language(), AppLanguage::Ru);
+        assert_eq!(eng.pack_id(), "starter");
     }
 
     #[test]

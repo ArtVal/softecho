@@ -1,0 +1,138 @@
+{
+  "title": "Sounds → syllables → words → phrases",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "A",
+      "speak": "a a a"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "O",
+      "speak": "o o o"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "E",
+      "speak": "e e e"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "M",
+      "speak": "m m m"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "P",
+      "speak": "p p p"
+    },
+    {
+      "type": "choose_word",
+      "stage": "sound",
+      "prompt": "Which sound is written: A?",
+      "options": ["a", "o", "e", "m"],
+      "answer": "a"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "MA",
+      "speak": "ma ma ma"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "PA",
+      "speak": "pa pa pa"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "BA",
+      "speak": "ba ba ba"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "DA",
+      "speak": "da da da"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "TA",
+      "speak": "ta ta ta"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "mom"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "water"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "home"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Which word means a drink?",
+      "options": ["water", "home", "pen", "bed"],
+      "answer": "water"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "good morning"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "thank you"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": ["I", "drink", "water"],
+      "answer": "I drink water"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly",
+      "text": "She sells seashells"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly",
+      "text": "red lorry yellow lorry"
+    }
+  ]
+}

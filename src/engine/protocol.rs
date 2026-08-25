@@ -79,6 +79,8 @@ pub enum Command {
     LeaveWarmup,
     /// Ручная установка уровня (сохраняется локально).
     SetLevel(ExerciseStage),
+    /// Язык UI / наборов / модели Vosk.
+    SetLanguage(crate::engine::i18n::AppLanguage),
     OpenDictaphone,
     OpenSettings,
     LeaveSettings,

@@ -42,10 +42,10 @@ pub fn big_button(ui: &mut egui::Ui, label: &str, fill: Color32) -> egui::Respon
 }
 
 /// Компактная кнопка «назад в меню» для верхней панели.
-pub fn back_to_menu_button(ui: &mut egui::Ui) -> egui::Response {
+pub fn back_to_menu_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     ui.add(
         egui::Button::new(
-            RichText::new("< В меню")
+            RichText::new(label)
                 .font(FontId::proportional(18.0))
                 .color(Color32::from_rgb(40, 55, 75)),
         )

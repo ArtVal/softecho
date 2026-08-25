@@ -6,9 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-pub const MODEL_DIR_NAME: &str = "vosk-model-small-ru-0.22";
-const MODEL_URL: &str =
-    "https://huggingface.co/rhasspy/vosk-models/resolve/main/ru/vosk-model-small-ru-0.22.zip";
+use super::i18n::AppLanguage;
+
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone)]
@@ -19,21 +18,25 @@ pub enum DownloadMsg {
     Err(String),
 }
 
-pub fn spawn_model_download(dest_parent: PathBuf, tx: Sender<DownloadMsg>) {
+pub fn spawn_model_download(dest_parent: PathBuf, language: AppLanguage, tx: Sender<DownloadMsg>) {
     std::thread::spawn(move || {
-        if let Err(e) = download_model(&dest_parent, &tx) {
+        if let Err(e) = download_model(&dest_parent, language, &tx) {
             let _ = tx.send(DownloadMsg::Err(e));
         }
     });
 }
 
-fn download_model(dest_parent: &Path, tx: &Sender<DownloadMsg>) -> Result<(), String> {
+fn download_model(
+    dest_parent: &Path,
+    language: AppLanguage,
+    tx: &Sender<DownloadMsg>,
+) -> Result<(), String> {
     fs::create_dir_all(dest_parent).map_err(|e| format!("Не удалось создать каталог: {e}"))?;
 
     let tmp_zip = dest_parent.join("vosk-model-download.tmp.zip");
     let _ = fs::remove_file(&tmp_zip);
 
-    let result = download_model_inner(dest_parent, &tmp_zip, tx);
+    let result = download_model_inner(dest_parent, language, &tmp_zip, tx);
     if result.is_err() {
         let _ = fs::remove_file(&tmp_zip);
     }
@@ -42,12 +45,14 @@ fn download_model(dest_parent: &Path, tx: &Sender<DownloadMsg>) -> Result<(), St
 
 fn download_model_inner(
     dest_parent: &Path,
+    language: AppLanguage,
     tmp_zip: &Path,
     tx: &Sender<DownloadMsg>,
 ) -> Result<(), String> {
-    let _ = tx.send(DownloadMsg::Phase("Скачиваю модель (~45 МБ)…".into()));
+    let size = language.vosk_model_size_hint();
+    let _ = tx.send(DownloadMsg::Phase(format!("Скачиваю модель ({size})…")));
 
-    let resp = ureq::get(MODEL_URL)
+    let resp = ureq::get(language.vosk_model_url())
         .timeout(DOWNLOAD_TIMEOUT)
         .call()
         .map_err(|e| format!("Не удалось скачать: {e}"))?;
@@ -85,7 +90,8 @@ fn download_model_inner(
 
     let _ = tx.send(DownloadMsg::Phase("Распаковка…".into()));
 
-    let model_path = dest_parent.join(MODEL_DIR_NAME);
+    let model_name = language.vosk_model_dir_name();
+    let model_path = dest_parent.join(model_name);
     if model_path.is_dir() {
         fs::remove_dir_all(&model_path).map_err(|e| format!("Не удалось очистить каталог: {e}"))?;
     }
@@ -94,7 +100,7 @@ fn download_model_inner(
     let _ = fs::remove_file(tmp_zip);
 
     if !model_path.is_dir() {
-        return Err("В архиве нет папки vosk-model-small-ru-0.22".into());
+        return Err(format!("В архиве нет папки {model_name}"));
     }
 
     let _ = tx.send(DownloadMsg::Done);
@@ -132,13 +138,13 @@ mod tests {
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
 
-    fn write_test_zip(path: &Path) {
+    fn write_test_zip(path: &Path, model_name: &str) {
         let file = File::create(path).unwrap();
         let mut zip = ZipWriter::new(file);
         let options = SimpleFileOptions::default();
-        zip.add_directory(format!("{MODEL_DIR_NAME}/"), options)
+        zip.add_directory(format!("{model_name}/"), options)
             .unwrap();
-        zip.start_file(format!("{MODEL_DIR_NAME}/README"), options)
+        zip.start_file(format!("{model_name}/README"), options)
             .unwrap();
         zip.write_all(b"ok").unwrap();
         zip.finish().unwrap();
@@ -146,18 +152,20 @@ mod tests {
 
     #[test]
     fn extract_zip_creates_model_dir() {
+        let model_name = AppLanguage::Ru.vosk_model_dir_name();
         let dir = std::env::temp_dir().join(format!("softecho-zip-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let zip_path = dir.join("test.zip");
-        write_test_zip(&zip_path);
+        write_test_zip(&zip_path, model_name);
         extract_zip(&zip_path, &dir).unwrap();
-        assert!(dir.join(MODEL_DIR_NAME).join("README").is_file());
+        assert!(dir.join(model_name).join("README").is_file());
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn extract_zip_does_not_require_model_dir_in_archive_name() {
+        let model_name = AppLanguage::En.vosk_model_dir_name();
         let dir = std::env::temp_dir().join(format!("softecho-zip-bad-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -169,7 +177,7 @@ mod tests {
         zip.write_all(b"x").unwrap();
         zip.finish().unwrap();
         extract_zip(&zip_path, &dir).unwrap();
-        assert!(!dir.join(MODEL_DIR_NAME).exists());
+        assert!(!dir.join(model_name).exists());
         let _ = fs::remove_dir_all(&dir);
     }
 }
