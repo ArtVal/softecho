@@ -1,0 +1,153 @@
+{
+  "title": "Vowels and consonants",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "A",
+      "speak": "a a a"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "O",
+      "speak": "o o o"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "E",
+      "speak": "e e e"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "I",
+      "speak": "i i i"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "U",
+      "speak": "u u u"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "M",
+      "speak": "m m m"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "P",
+      "speak": "p p p"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "B",
+      "speak": "b b b"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "T",
+      "speak": "t t t"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "D",
+      "speak": "d d d"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "K",
+      "speak": "k k k"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "N",
+      "speak": "n n n"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "L",
+      "speak": "l l l"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "S",
+      "speak": "s s s"
+    },
+    {
+      "type": "choose_word",
+      "stage": "sound",
+      "prompt": "Which sound is written: A?",
+      "options": [
+        "a",
+        "o",
+        "e",
+        "m"
+      ],
+      "answer": "a"
+    },
+    {
+      "type": "choose_word",
+      "stage": "sound",
+      "prompt": "Which sound is written: M?",
+      "options": [
+        "m",
+        "p",
+        "b",
+        "t"
+      ],
+      "answer": "m"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "MA",
+      "speak": "ma ma ma"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "PA",
+      "speak": "pa pa pa"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "mom"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "I say a"
+    }
+  ]
+}

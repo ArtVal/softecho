@@ -1,0 +1,91 @@
+{
+  "title": "Family",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "MA",
+      "speak": "ma ma ma"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "PA",
+      "speak": "pa pa pa"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Who is a parent?",
+      "options": [
+        "mom",
+        "cup",
+        "bus",
+        "tree"
+      ],
+      "answer": "mom"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Who is a child?",
+      "options": [
+        "son",
+        "tea",
+        "door",
+        "road"
+      ],
+      "answer": "son"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "dad"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "sister"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "brother"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "grandma"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": [
+        "This",
+        "is",
+        "my",
+        "mom"
+      ],
+      "answer": "This is my mom"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "I love you"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "My family is here"
+    }
+  ]
+}

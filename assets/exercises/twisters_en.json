@@ -1,0 +1,119 @@
+{
+  "title": "Tongue twisters",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase (warm-up)",
+      "text": "red leather yellow leather"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "She sells seashells by the seashore"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Unique New York"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Red leather yellow leather"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Toy boat toy boat toy boat"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Fresh fried fish"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Eleven benevolent elephants"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Irish wristwatch"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Six sticky skeletons"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Black background brown background"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Good blood bad blood"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Three free throws"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Really rural"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Flashy fish"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Big black bug"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Cup of coffee"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Purple paper people"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Tiny tiger toes"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "twister",
+      "prompt": "Tongue twister: slowly, then a bit faster",
+      "text": "Soft silk socks"
+    }
+  ]
+}

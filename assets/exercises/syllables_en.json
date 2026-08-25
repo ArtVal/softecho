@@ -1,0 +1,127 @@
+{
+  "title": "Open syllables",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "A",
+      "speak": "a a a"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "sound",
+      "prompt": "Say the sound",
+      "text": "M",
+      "speak": "m m m"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "MA",
+      "speak": "ma ma ma"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "PA",
+      "speak": "pa pa pa"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "BA",
+      "speak": "ba ba ba"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "DA",
+      "speak": "da da da"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "TA",
+      "speak": "ta ta ta"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "KA",
+      "speak": "ka ka ka"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "LA",
+      "speak": "la la la"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "NA",
+      "speak": "na na na"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "MO",
+      "speak": "mo mo mo"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "PO",
+      "speak": "po po po"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "MI",
+      "speak": "mi mi mi"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "PI",
+      "speak": "pi pi pi"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "mama"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "papa"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "ma ma ma"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "pa ta ka"
+    }
+  ]
+}

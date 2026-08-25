@@ -1,0 +1,126 @@
+{
+  "title": "Home and daily life",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "HOME",
+      "speak": "home home"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "SOUP",
+      "speak": "soup soup"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Where do people live?",
+      "options": [
+        "home",
+        "tea",
+        "pen",
+        "window"
+      ],
+      "answer": "home"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What do people drink?",
+      "options": [
+        "water",
+        "table",
+        "door",
+        "lamp"
+      ],
+      "answer": "water"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "Where do people sleep?",
+      "options": [
+        "bed",
+        "spoon",
+        "key",
+        "cup"
+      ],
+      "answer": "bed"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What is on the table?",
+      "options": [
+        "plate",
+        "window",
+        "street",
+        "boot"
+      ],
+      "answer": "plate"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "table"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "window"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "bread"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "tea"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": [
+        "I",
+        "am",
+        "home"
+      ],
+      "answer": "I am home"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": [
+        "I",
+        "want",
+        "to",
+        "eat"
+      ],
+      "answer": "I want to eat"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "I drink tea"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "Where is my plate"
+    }
+  ]
+}

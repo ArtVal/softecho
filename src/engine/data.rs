@@ -57,14 +57,29 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         bytes: include_bytes!("../../assets/exercises/sounds.json"),
     },
     EmbeddedPack {
+        id: "sounds_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/sounds_en.json"),
+    },
+    EmbeddedPack {
         id: "syllables",
         language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/syllables.json"),
     },
     EmbeddedPack {
+        id: "syllables_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/syllables_en.json"),
+    },
+    EmbeddedPack {
         id: "odk",
         language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/odk.json"),
+    },
+    EmbeddedPack {
+        id: "odk_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/odk_en.json"),
     },
     EmbeddedPack {
         id: "rhymes",
@@ -77,9 +92,19 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         bytes: include_bytes!("../../assets/exercises/twisters.json"),
     },
     EmbeddedPack {
+        id: "twisters_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/twisters_en.json"),
+    },
+    EmbeddedPack {
         id: "daily",
         language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/daily.json"),
+    },
+    EmbeddedPack {
+        id: "daily_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/daily_en.json"),
     },
     EmbeddedPack {
         id: "greetings",
@@ -87,9 +112,19 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         bytes: include_bytes!("../../assets/exercises/greetings.json"),
     },
     EmbeddedPack {
+        id: "greetings_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/greetings_en.json"),
+    },
+    EmbeddedPack {
         id: "family",
         language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/family.json"),
+    },
+    EmbeddedPack {
+        id: "family_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/family_en.json"),
     },
     EmbeddedPack {
         id: "body",
@@ -100,6 +135,11 @@ const EMBEDDED_PACKS: &[EmbeddedPack] = &[
         id: "food",
         language: AppLanguage::Ru,
         bytes: include_bytes!("../../assets/exercises/food.json"),
+    },
+    EmbeddedPack {
+        id: "food_en",
+        language: AppLanguage::En,
+        bytes: include_bytes!("../../assets/exercises/food_en.json"),
     },
     EmbeddedPack {
         id: "transport",
@@ -508,7 +548,7 @@ mod tests {
             assert_eq!(pack.title, entry.title);
             assert!(!pack.exercises.is_empty());
         }
-        assert!(list_all_packs().len() >= 15);
+        assert!(list_all_packs().len() >= 23);
         assert!(
             list_packs_for(Some(AppLanguage::Ru))
                 .iter()
@@ -516,12 +556,13 @@ mod tests {
         );
         let pics = load_pack("pictures").expect("pictures");
         assert!(pics.exercises.iter().any(|e| e.image_id().is_some()));
-        assert!(list_packs_for(Some(AppLanguage::En))
-            .iter()
-            .any(|e| e.id == "starter_en"));
-        assert!(!list_packs_for(Some(AppLanguage::En))
-            .iter()
-            .any(|e| e.id == "daily"));
+        let en = list_packs_for(Some(AppLanguage::En));
+        assert!(en.iter().any(|e| e.id == "starter_en"));
+        assert!(en.iter().any(|e| e.id == "sounds_en"));
+        assert!(en.iter().any(|e| e.id == "daily_en"));
+        assert!(en.iter().any(|e| e.id == "twisters_en"));
+        assert!(en.len() >= 10);
+        assert!(!en.iter().any(|e| e.id == "daily"));
     }
 
     #[test]

@@ -917,18 +917,21 @@ impl UiApp {
             }
 
             ui.add_space(16.0);
-            if self.engine.language() == AppLanguage::Ru {
-                ui.label(
-                    RichText::new(t.t("warmup_odk_hint"))
-                        .font(FontId::proportional(16.0))
-                        .color(Color32::DARK_GRAY),
-                );
-                ui.add_space(12.0);
-                if big_button(ui, t.t("warmup_odk_btn"), Color32::from_rgb(40, 130, 90)).clicked() {
-                    self.engine.handle(Command::SetPack("odk".into()));
-                }
-                ui.add_space(8.0);
+            ui.label(
+                RichText::new(t.t("warmup_odk_hint"))
+                    .font(FontId::proportional(16.0))
+                    .color(Color32::DARK_GRAY),
+            );
+            ui.add_space(12.0);
+            if big_button(ui, t.t("warmup_odk_btn"), Color32::from_rgb(40, 130, 90)).clicked() {
+                let odk_id = if self.engine.language() == AppLanguage::En {
+                    "odk_en"
+                } else {
+                    "odk"
+                };
+                self.engine.handle(Command::SetPack(odk_id.into()));
             }
+            ui.add_space(8.0);
             if big_button(ui, t.t("start"), Color32::from_rgb(40, 110, 180)).clicked() {
                 self.engine.handle(Command::StartSession);
             }

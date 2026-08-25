@@ -1,0 +1,99 @@
+{
+  "title": "Greetings",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "YES",
+      "speak": "yes yes"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "NO",
+      "speak": "no no"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "yes"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "no"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "hello"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "thanks"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "How do you reply to “thank you”?",
+      "options": [
+        "please",
+        "table",
+        "window",
+        "tea"
+      ],
+      "answer": "please"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": [
+        "Good",
+        "morning"
+      ],
+      "answer": "Good morning"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": [
+        "Thank",
+        "you"
+      ],
+      "answer": "Thank you"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "Good afternoon"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "Goodbye"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "How are you"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "Nice to meet you"
+    }
+  ]
+}

@@ -368,7 +368,7 @@ pub fn tr(lang: AppLanguage, key: &str) -> &'static str {
         }
         (AppLanguage::Ru, "warmup_odk_hint") => "После схем удобно набор «Артикуляция: па-та-ка».",
         (AppLanguage::En, "warmup_odk_hint") => {
-            "After the schemas, the Russian “pa-ta-ka” pack is a good motor warm-up."
+            "After the schemas, the “pa-ta-ka” pack is a good motor warm-up."
         }
         (AppLanguage::Ru, "warmup_odk_btn") => "Открыть па-та-ка",
         (AppLanguage::En, "warmup_odk_btn") => "Open pa-ta-ka",

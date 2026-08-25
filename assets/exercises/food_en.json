@@ -1,0 +1,90 @@
+{
+  "title": "Food",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "SOUP",
+      "speak": "soup soup"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Say the syllable",
+      "text": "MILK",
+      "speak": "milk milk"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What do people eat?",
+      "options": [
+        "bread",
+        "chair",
+        "key",
+        "map"
+      ],
+      "answer": "bread"
+    },
+    {
+      "type": "choose_word",
+      "stage": "word",
+      "prompt": "What do people drink?",
+      "options": [
+        "water",
+        "shoe",
+        "lamp",
+        "door"
+      ],
+      "answer": "water"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "apple"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "tea"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "soup"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say the word",
+      "text": "milk"
+    },
+    {
+      "type": "build_phrase",
+      "stage": "phrase",
+      "prompt": "Build the phrase",
+      "words": [
+        "I",
+        "eat",
+        "bread"
+      ],
+      "answer": "I eat bread"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "I drink water"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the phrase",
+      "text": "Please pass the salt"
+    }
+  ]
+}

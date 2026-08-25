@@ -1,0 +1,101 @@
+{
+  "title": "Articulation: pa-ta-ka",
+  "exercises": [
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Repeat the syllable calmly",
+      "text": "PA",
+      "speak": "pa pa pa"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Repeat the syllable calmly",
+      "text": "TA",
+      "speak": "ta ta ta"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Repeat the syllable calmly",
+      "text": "KA",
+      "speak": "ka ka ka"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Repeat the syllable calmly",
+      "text": "MA",
+      "speak": "ma ma ma"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Repeat the syllable calmly",
+      "text": "BA",
+      "speak": "ba ba ba"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Repeat the syllable calmly",
+      "text": "DA",
+      "speak": "da da da"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Repeat the syllable calmly",
+      "text": "LA",
+      "speak": "la la la"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "syllable",
+      "prompt": "Repeat the syllable calmly",
+      "text": "NA",
+      "speak": "na na na"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say it in a row",
+      "text": "pa-ta-ka",
+      "speak": "pa ta ka"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say it in a row",
+      "text": "ma-pa-ta",
+      "speak": "ma pa ta"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say it in a row",
+      "text": "ba-da-ga",
+      "speak": "ba da ga"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "word",
+      "prompt": "Say it in a row",
+      "text": "la-na-ma",
+      "speak": "la na ma"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the chain",
+      "text": "pa ta ka pa ta ka"
+    },
+    {
+      "type": "read_aloud",
+      "stage": "phrase",
+      "prompt": "Say the chain",
+      "text": "ma ma pa pa ta ta"
+    }
+  ]
+}
