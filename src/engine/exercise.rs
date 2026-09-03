@@ -37,16 +37,6 @@ impl ExerciseStage {
         ExerciseStage::Word,
         ExerciseStage::Phrase,
     ];
-
-    pub fn label_ru(self) -> &'static str {
-        match self {
-            Self::Sound => "Звуки",
-            Self::Syllable => "Слоги",
-            Self::Word => "Слова",
-            Self::Phrase => "Фразы",
-            Self::Twister => "Скороговорки",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -504,16 +494,6 @@ pub enum SpeechRating {
     Weak,
 }
 
-impl SpeechRating {
-    pub fn label_ru(self) -> &'static str {
-        super::i18n::rating_label(super::i18n::AppLanguage::Ru, self)
-    }
-
-    pub fn label(self, lang: super::i18n::AppLanguage) -> &'static str {
-        super::i18n::rating_label(lang, self)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WordStat {
     pub correct: u32,
@@ -661,6 +641,11 @@ pub fn format_progress_report(
     use super::i18n::{rating_label, stage_label, tr};
     let mut lines = Vec::new();
     lines.push(tr(language, "report_title").into());
+    lines.push(format!(
+        "{} {}",
+        tr(language, "version"),
+        env!("SOFTECHO_VERSION")
+    ));
     lines.push(format!("{}: {pack_title}", tr(language, "pack")));
     let level = progress
         .level
@@ -687,23 +672,26 @@ pub fn format_progress_report(
     if !progress.session_history.is_empty() {
         lines.push(tr(language, "report_history").into());
         for (i, s) in progress.session_history.iter().enumerate() {
-            let pct = if s.total == 0 {
-                0
-            } else {
-                (100 * s.correct) / s.total
-            };
+            let pct = (100u32)
+                .checked_mul(s.correct)
+                .and_then(|n| n.checked_div(s.total))
+                .unwrap_or(0);
             lines.push(format!("  {}. {}/{} ({}%)", i + 1, s.correct, s.total, pct));
         }
     }
     lines.push(format!("{}:", tr(language, "map_by_stage")));
     for s in speech_map_stage_summaries(entries) {
         lines.push(format!(
-            "  {}: {}, {}, {}, {}",
+            "  {}: {} {}, {} {}, {} {}, {} {}",
             stage_label(language, s.stage),
-            format!("{} {}", rating_label(language, SpeechRating::Good), s.good),
-            format!("{} {}", rating_label(language, SpeechRating::Almost), s.almost),
-            format!("{} {}", rating_label(language, SpeechRating::Weak), s.weak),
-            format!("{} {}", rating_label(language, SpeechRating::Unknown), s.unknown),
+            rating_label(language, SpeechRating::Good),
+            s.good,
+            rating_label(language, SpeechRating::Almost),
+            s.almost,
+            rating_label(language, SpeechRating::Weak),
+            s.weak,
+            rating_label(language, SpeechRating::Unknown),
+            s.unknown,
         ));
     }
     let weak: Vec<_> = entries

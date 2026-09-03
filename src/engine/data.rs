@@ -197,10 +197,6 @@ pub struct PackCatalogEntry {
     pub editable: bool,
 }
 
-pub fn list_builtin_packs() -> Vec<PackCatalogEntry> {
-    list_builtin_packs_for(None)
-}
-
 pub fn list_builtin_packs_for(language: Option<AppLanguage>) -> Vec<PackCatalogEntry> {
     EMBEDDED_PACKS
         .iter()
@@ -246,10 +242,6 @@ pub fn list_user_packs() -> Vec<PackCatalogEntry> {
     }
     out.sort_by(|a, b| a.title.cmp(&b.title));
     out
-}
-
-pub fn list_all_packs() -> Vec<PackCatalogEntry> {
-    list_packs_for(None)
 }
 
 pub fn list_packs_for(language: Option<AppLanguage>) -> Vec<PackCatalogEntry> {
@@ -471,7 +463,24 @@ pub fn save_progress(progress: &Progress) -> Result<(), String> {
     let path = progress_path()?;
     let bytes = serde_json::to_vec_pretty(progress)
         .map_err(|e| format!("Не удалось сериализовать прогресс: {e}"))?;
-    fs::write(&path, bytes).map_err(|e| format!("Не удалось записать {path:?}: {e}"))
+    atomic_write(&path, &bytes)
+}
+
+/// Запись через `.tmp` + rename, чтобы краш не оставлял обрезанный JSON.
+fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, bytes).map_err(|e| format!("Не удалось записать {tmp:?}: {e}"))?;
+    // На Windows rename не перезаписывает существующий файл.
+    if path.exists() {
+        fs::remove_file(path).map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            format!("Не удалось заменить {path:?}: {e}")
+        })?;
+    }
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("Не удалось сохранить {path:?}: {e}")
+    })
 }
 
 /// Новый файл отчёта: `reports/softecho-report_YYYY….txt`.
@@ -558,12 +567,12 @@ mod tests {
 
     #[test]
     fn all_builtin_packs_load() {
-        for entry in list_all_packs() {
+        for entry in list_packs_for(None) {
             let pack = load_pack(&entry.id).expect("набор должен разбираться");
             assert_eq!(pack.title, entry.title);
             assert!(!pack.exercises.is_empty());
         }
-        assert!(list_all_packs().len() >= 26);
+        assert!(list_packs_for(None).len() >= 26);
         assert!(
             list_packs_for(Some(AppLanguage::Ru))
                 .iter()
@@ -642,6 +651,20 @@ mod tests {
         assert_eq!(got, "раз\nдва");
         save_dictaphone_text(&path, "итог").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "итог");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn atomic_write_roundtrip_and_overwrite() {
+        let dir = std::env::temp_dir().join(format!("softecho-atomic-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("progress.json");
+        atomic_write(&path, b"{\"a\":1}").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{\"a\":1}");
+        atomic_write(&path, b"{\"a\":2}").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{\"a\":2}");
+        assert!(!path.with_extension("json.tmp").exists());
         let _ = fs::remove_dir_all(&dir);
     }
 

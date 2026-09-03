@@ -1,8 +1,10 @@
 //! Линковка нативной libvosk при feature = "asr".
 //! Linux: libvosk.so · Windows: libvosk.dll · macOS: libvosk.dylib (Vosk 0.3.42).
 //! Windows: иконка и сведения о файле (Проводник) — не путать с подписью SmartScreen.
+//! Версия: `SOFTECHO_VERSION` из Cargo.toml (+ git describe для сборок не с тега).
 
 fn main() {
+    emit_app_version();
     embed_windows_info();
 
     if std::env::var_os("CARGO_FEATURE_ASR").is_none() {
@@ -23,6 +25,45 @@ fn main() {
     }
 }
 
+/// `SOFTECHO_VERSION` для UI / отчётов.
+/// Релиз с точного тега `vX.Y.Z` → `X.Y.Z`. Иначе → `X.Y.Z · <git describe>`.
+fn emit_app_version() {
+    println!("cargo:rerun-if-env-changed=SOFTECHO_VERSION");
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/refs/heads");
+
+    if let Ok(forced) = std::env::var("SOFTECHO_VERSION") {
+        if !forced.is_empty() {
+            println!("cargo:rustc-env=SOFTECHO_VERSION={forced}");
+            return;
+        }
+    }
+
+    let cargo = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".into());
+    let ver = match git_describe() {
+        Some(desc) if desc == format!("v{cargo}") || desc == cargo => cargo,
+        Some(desc) => format!("{cargo} · {desc}"),
+        None => cargo,
+    };
+    println!("cargo:rustc-env=SOFTECHO_VERSION={ver}");
+}
+
+fn git_describe() -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args(["describe", "--tags", "--always", "--dirty"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
 /// Иконка и поля в свойствах exe. SmartScreen это не убирает — нужна подпись.
 fn embed_windows_info() {
     if std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() != "windows" {
@@ -32,14 +73,17 @@ fn embed_windows_info() {
     println!("cargo:rerun-if-changed=assets/softecho.ico");
 
     let mut res = winresource::WindowsResource::new();
+    let ver = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".into());
     res.set("ProductName", "SoftEcho");
     res.set("FileDescription", "SoftEcho — домашний тренажёр речи");
     res.set("CompanyName", "SoftEcho");
     res.set("LegalCopyright", "MIT");
     res.set("OriginalFilename", "softecho.exe");
     res.set("InternalName", "softecho");
+    // Строки в свойствах файла; числовой FILEVERSION winresource берёт из Cargo сам.
+    res.set("FileVersion", &ver);
+    res.set("ProductVersion", &ver);
     res.set_language(0x0419); // ru-RU
-
     let icon = std::path::Path::new("assets/softecho.ico");
     if icon.exists() {
         res.set_icon("assets/softecho.ico");

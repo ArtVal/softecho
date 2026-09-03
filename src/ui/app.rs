@@ -165,6 +165,12 @@ impl UiApp {
                     .font(FontId::proportional(22.0))
                     .color(Color32::from_rgb(60, 80, 100)),
             );
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(format!("{} {}", t.t("version"), crate::APP_VERSION))
+                    .font(FontId::proportional(16.0))
+                    .color(Color32::DARK_GRAY),
+            );
             ui.add_space(20.0);
             ui.label(
                 RichText::new(format!("{}: {}", t.t("pack"), self.engine.pack().title))
@@ -494,7 +500,7 @@ impl UiApp {
             };
 
             ui.label(
-                RichText::new(format!("{title}"))
+                RichText::new(title)
                     .font(FontId::proportional(22.0))
                     .strong()
                     .color(Color32::from_rgb(40, 70, 100)),
@@ -738,11 +744,10 @@ impl UiApp {
                     ui.add_space(8.0);
                 }
                 for (i, s) in progress.session_history.iter().enumerate() {
-                    let pct = if s.total == 0 {
-                        0
-                    } else {
-                        (100 * s.correct) / s.total
-                    };
+                    let pct = (100u32)
+                        .checked_mul(s.correct)
+                        .and_then(|n| n.checked_div(s.total))
+                        .unwrap_or(0);
                     let bar_n = (pct / 10).min(10) as usize;
                     let bar = "█".repeat(bar_n) + &"░".repeat(10 - bar_n);
                     ui.label(
@@ -1166,6 +1171,13 @@ impl UiApp {
                         .color(Color32::DARK_GRAY),
                 );
             }
+
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new(format!("{} {}", t.t("version"), crate::APP_VERSION))
+                    .font(FontId::proportional(16.0))
+                    .color(Color32::DARK_GRAY),
+            );
 
             ui.add_space(20.0);
             self.ui_model_download(ui, true);
@@ -1703,25 +1715,31 @@ impl UiApp {
                     );
                 }
                 ui.add_space(16.0);
-                if big_button(ui, self.engine.ui_text().t("next"), Color32::from_rgb(40, 110, 180))
+                footer_buttons(ui, |ui| {
+                    if big_button(ui, self.engine.ui_text().t("next"), Color32::from_rgb(40, 110, 180))
+                        .clicked()
+                    {
+                        self.engine.handle(Command::AdvanceAfterFeedback);
+                    }
+                    ui.add_space(12.0);
+                    if big_button(
+                        ui,
+                        self.engine.ui_text().t("skip_repeat"),
+                        Color32::from_rgb(90, 100, 120),
+                    )
                     .clicked()
-                {
-                    self.engine.handle(Command::AdvanceAfterFeedback);
-                }
-                ui.add_space(12.0);
-                if big_button(
-                    ui,
-                    self.engine.ui_text().t("skip_repeat"),
-                    Color32::from_rgb(90, 100, 120),
-                )
-                .clicked()
-                {
-                    self.engine.handle(Command::SkipRepeatAndAdvance);
-                }
-            } else if big_button(ui, self.engine.ui_text().t("next"), Color32::from_rgb(40, 110, 180))
-                .clicked()
-            {
-                self.engine.handle(Command::AdvanceAfterFeedback);
+                    {
+                        self.engine.handle(Command::SkipRepeatAndAdvance);
+                    }
+                });
+            } else {
+                footer_buttons(ui, |ui| {
+                    if big_button(ui, self.engine.ui_text().t("next"), Color32::from_rgb(40, 110, 180))
+                        .clicked()
+                    {
+                        self.engine.handle(Command::AdvanceAfterFeedback);
+                    }
+                });
             }
         });
     }

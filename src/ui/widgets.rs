@@ -85,18 +85,17 @@ pub fn back_to_menu_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     )
 }
 
-/// Кнопки в нижней панели: на узком экране — столбиком.
+/// Кнопки внизу экрана: всегда по центру; на узком — столбиком, на широком — в ряд.
 pub fn footer_buttons(ui: &mut egui::Ui, add_buttons: impl FnOnce(&mut egui::Ui)) {
-    if ui.available_width() < 640.0 {
-        ui.vertical_centered(|ui| add_buttons(ui));
-    } else {
-        ui.horizontal(|ui| {
-            ui.with_layout(
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| add_buttons(ui),
-            );
-        });
-    }
+    let narrow = ui.available_width() < 640.0;
+    ui.vertical_centered(|ui| {
+        if narrow {
+            add_buttons(ui);
+        } else {
+            // horizontal на всю ширину без center «уезжает» влево — оборачиваем.
+            ui.horizontal(|ui| add_buttons(ui));
+        }
+    });
 }
 
 /// Прокрутка экрана целиком — на низком окне (Windows + панель задач) кнопки не уезжают «за край».

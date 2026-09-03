@@ -5,6 +5,9 @@
 
 mod engine;
 mod ui;
+mod version;
+
+pub use version::APP_VERSION;
 
 use ui::UiApp;
 
@@ -19,7 +22,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([900.0, 700.0])
             .with_min_inner_size([480.0, 420.0])
-            .with_title("SoftEcho")
+            .with_title(format!("SoftEcho {}", crate::APP_VERSION))
             .with_icon(icon),
         ..Default::default()
     };

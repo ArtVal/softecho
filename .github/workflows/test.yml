@@ -10,6 +10,16 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asr: false
+            features: ""
+            cache_key: default
+          - asr: true
+            features: "--features asr"
+            cache_key: asr
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +44,11 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          key: test-default
+          key: test-${{ matrix.cache_key }}
+
+      - name: Fetch Vosk Linux natives
+        if: matrix.asr
+        run: ./scripts/fetch-vosk-linux.sh
 
       - name: cargo test
-        run: cargo test
+        run: cargo test ${{ matrix.features }}

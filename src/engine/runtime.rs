@@ -2383,5 +2383,115 @@ mod tests {
         assert!(!t.want_repaint);
         assert!(t.repaint_after.is_none());
     }
+
+    fn submit_current_correct(eng: &mut Engine) {
+        let Some(ex) = eng.current_exercise().cloned() else {
+            return;
+        };
+        match ex {
+            Exercise::ChooseWord { answer, .. } => {
+                eng.handle(Command::Submit(UserAnswer::Choice(answer)));
+            }
+            Exercise::BuildPhrase { answer, .. } => {
+                let parts: Vec<_> = answer.split_whitespace().map(str::to_string).collect();
+                eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
+            }
+            Exercise::ReadAloud { .. } => {
+                eng.handle(Command::Submit(UserAnswer::ReadDone {
+                    matched: true,
+                    heard: None,
+                }));
+            }
+        }
+    }
+
+    /// Smoke: экраны UI открываются/закрываются через Command (контракт app.rs).
+    #[test]
+    fn ui_navigation_smoke_open_leave_and_gohome() {
+        let mut eng = Engine::new_logic_only();
+
+        let opens = [
+            (Command::OpenPackPick, "PackPick"),
+            (Command::OpenLevelPick, "LevelPick"),
+            (Command::OpenSpeechMap, "SpeechMap"),
+            (Command::OpenProgress, "ProgressReport"),
+            (Command::OpenWarmup, "Warmup"),
+            (Command::OpenSettings, "Settings"),
+            (Command::OpenDictaphone, "Dictaphone"),
+            (Command::OpenPackEditor, "PackEditor"),
+        ];
+
+        for (open, name) in opens {
+            eng.handle(Command::GoHome);
+            assert!(matches!(eng.screen(), Screen::Home));
+            eng.handle(open.clone());
+            let ok = match name {
+                "PackPick" => matches!(eng.screen(), Screen::PackPick),
+                "LevelPick" => matches!(eng.screen(), Screen::LevelPick),
+                "SpeechMap" => matches!(eng.screen(), Screen::SpeechMap),
+                "ProgressReport" => matches!(eng.screen(), Screen::ProgressReport),
+                "Warmup" => matches!(eng.screen(), Screen::Warmup),
+                "Settings" => matches!(eng.screen(), Screen::Settings),
+                "Dictaphone" => matches!(eng.screen(), Screen::Dictaphone),
+                "PackEditor" => matches!(eng.screen(), Screen::PackEditor),
+                _ => false,
+            };
+            assert!(ok, "после {open:?} экран {name}, получили {:?}", eng.screen());
+            eng.handle(Command::GoHome);
+            assert!(matches!(eng.screen(), Screen::Home), "GoHome с {open:?}");
+        }
+
+        eng.handle(Command::OpenPackPick);
+        eng.handle(Command::LeavePackPick);
+        assert!(matches!(eng.screen(), Screen::Home));
+
+        eng.handle(Command::OpenLevelPick);
+        eng.handle(Command::LeaveLevelPick);
+        assert!(matches!(eng.screen(), Screen::Home));
+
+        eng.handle(Command::SetSimpleMode(true));
+        assert!(eng.simple_mode());
+        eng.handle(Command::SetSimpleMode(false));
+        assert!(!eng.simple_mode());
+    }
+
+    /// Занятие до Result → AgainSession снова открывает Exercise.
+    #[test]
+    fn ui_practice_reaches_result_then_again() {
+        let mut eng = Engine::new_logic_only();
+        eng.pack = tiny_test_pack();
+        eng.progress.level = Some(ExerciseStage::Word);
+        eng.handle(Command::StartSession);
+        assert!(matches!(eng.screen(), Screen::Exercise));
+
+        let mut guard = 0;
+        while !matches!(eng.screen(), Screen::Result { .. }) {
+            guard += 1;
+            assert!(guard < 40, "зациклились без Result");
+            if matches!(eng.screen(), Screen::Exercise) {
+                submit_current_correct(&mut eng);
+            }
+            if matches!(eng.screen(), Screen::Feedback { .. }) {
+                eng.handle(Command::AdvanceAfterFeedback);
+            }
+        }
+
+        match eng.screen() {
+            Screen::Result {
+                correct,
+                total,
+                unique,
+            } => {
+                assert!(*total >= 1);
+                assert_eq!(*correct, *total);
+                assert!(*unique >= 1);
+            }
+            other => panic!("ожидали Result, получили {other:?}"),
+        }
+
+        eng.handle(Command::AgainSession);
+        assert!(matches!(eng.screen(), Screen::Exercise));
+        assert!(eng.session().is_some());
+    }
 }
 

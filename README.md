@@ -23,7 +23,7 @@
 
 ## Скачать готовый бинарник
 
-**Релизы:** [GitHub Releases](https://github.com/ArtVal/softecho/releases) — архивы `text` и `asr` для Windows, Linux и macOS (тег `v*`).
+**Релизы:** [GitHub Releases](https://github.com/ArtVal/softecho/releases) — архивы `text` / `asr` и Windows **Setup.exe** для Windows, Linux и macOS (тег `v*`).
 
 Запасной путь — артефакты CI:
 
@@ -37,6 +37,7 @@
 |----------|------------|
 | `…-text` | только упражнения, без микрофона |
 | `…-asr` | распознавание речи; **модель языка (~45 МБ) отдельно** |
+| `…-setup-text.exe` / `…-setup-asr.exe` | установщик Windows (меню Пуск, удаление) |
 
 После распаковки asr-сборки: **Настройки → Скачать модель** (нужен интернет один раз) или положите папку модели рядом с exe / в каталог данных (`vosk-model-small-ru-0.22` или `vosk-model-small-en-us-0.15` — в зависимости от языка в Настройках).
 
@@ -122,20 +123,29 @@ cargo run --release --features asr
 
 Без `--features asr` или без модели — текстовый режим и самопроверка.
 
-## Portable-сборки
+## Portable-сборки и установщик Windows
 
 | Платформа | CI workflow | Локально |
 |-----------|-------------|----------|
-| Windows | `windows-portable` | `./scripts/package-windows-portable.sh` |
+| Windows portable | `windows-portable` | `./scripts/package-windows-portable.sh` |
+| Windows **Setup.exe** | тот же workflow | `./scripts/package-windows-installer.sh` (нужен [Inno Setup 6](https://jrsoftware.org/isinfo.php)) |
 | Linux | `linux-portable` | `./scripts/package-linux-portable.sh` |
 | macOS | `macos-portable` | `./scripts/package-macos-portable.sh` |
 
 С голосом: `fetch-vosk-*.sh`, затем `package-*-portable.sh --asr`.  
 Модель в zip: `INCLUDE_MODEL=1 ./scripts/package-*-portable.sh --asr`.
 
+Установщик Windows (после portable):
+
+```bash
+./scripts/package-windows-portable.sh --asr
+./scripts/package-windows-installer.sh --asr   # → dist/softecho-windows-x86_64-setup-asr.exe
+```
+
 Артефакты в `dist/`:
 
-- `softecho-windows-x86_64-{text,asr}.zip`
+- `softecho-windows-x86_64-{text,asr}.zip` — portable
+- `softecho-windows-x86_64-setup-{text,asr}.exe` — инсталлятор (ярлык в меню Пуск, удаление)
 - `softecho-linux-x86_64-{text,asr}.tar.gz`
 - `softecho-macos-aarch64-{text,asr}.tar.gz`
 
@@ -166,7 +176,21 @@ cargo clippy -- -D warnings
 cargo clippy --features asr -- -D warnings
 ```
 
-На GitHub: workflow **test** (`cargo test` на push/PR в `main`).
+На GitHub: workflow **test** (`cargo test` и `cargo test --features asr` на push/PR в `main`).
+
+## Версия и релиз
+
+Источник истины: `version` в `Cargo.toml`. UI / Setup / свойства exe берут её оттуда (через `build.rs` → `SOFTECHO_VERSION`).
+
+```bash
+./scripts/version.sh                 # 0.2.0
+./scripts/version.sh bump patch      # только Cargo.toml (+ lock)
+./scripts/version.sh bump minor --commit --tag
+./scripts/version.sh bump patch --push   # commit + tag vX.Y.Z + push → CI Releases
+```
+
+На теге `v*` CI проверяет, что номер в `Cargo.toml` совпадает с тегом (`version.sh check-tag`).
+Сборка не с тега показывает в UI суффикс git describe, например `0.2.0 · abc1234-dirty`.
 
 ## Лицензия
 

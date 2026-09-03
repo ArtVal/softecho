@@ -168,6 +168,7 @@ fn fill_f32(
     }
 }
 
+#[cfg(any(feature = "asr", test))]
 fn resample_i16_to_f32(input: &[i16], from_hz: u32, to_hz: u32) -> Vec<f32> {
     if input.is_empty() || from_hz == 0 || to_hz == 0 {
         return Vec::new();
@@ -194,6 +195,7 @@ fn resample_i16_to_f32(input: &[i16], from_hz: u32, to_hz: u32) -> Vec<f32> {
 }
 
 /// Дописать кадр в кольцевой захват (хвост не длиннее `max_samples`).
+#[cfg(any(feature = "asr", test))]
 pub fn push_capture(buf: &mut Vec<i16>, frame: &[i16], max_samples: usize) {
     if frame.is_empty() || max_samples == 0 {
         return;

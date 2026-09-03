@@ -18,6 +18,8 @@
 - GitHub Releases при теге `v*` (CI прикрепляет portable-архивы)
 - Кнопка «Скачать модель» на главной, если Vosk не установлен (и в Настройках)
 - **Windows portable:** release без чёрной консоли, иконка + метаданные exe, подсказка про SmartScreen в `ЧТОБЫ_ЗАПУСТИТЬ.txt`
+- **Windows Setup.exe:** Inno Setup 6 (`scripts/windows/softecho.iss` + `package-windows-installer.sh`), артефакт и релизный upload рядом с zip
+- **Версия:** `scripts/version.sh` (bump / tag / check-tag); UI и CI синхронизированы с `Cargo.toml`
 
 Граница по умолчанию: **команды внутрь, события с краёв (ASR) наружу**. Не общая шина на всё приложение.
 

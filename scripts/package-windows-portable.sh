@@ -186,7 +186,8 @@ SoftEcho — portable (Windows x86_64)
   https://alphacephei.com/vosk/models (vosk-model-small-ru-0.22)
   или %APPDATA%\SoftEcho\SoftEcho\vosk-model-small-ru-0.22
 
-Без модели — текстовый режим. Установщик не нужен.
+Без модели — текстовый режим. Установщик: softecho-windows-x86_64-setup-*.exe
+(на Releases / в Actions рядом с zip).
 EOF
 
 mkdir -p "$ROOT/dist"

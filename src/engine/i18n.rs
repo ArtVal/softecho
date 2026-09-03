@@ -15,13 +15,6 @@ pub enum AppLanguage {
 impl AppLanguage {
     pub const ALL: [AppLanguage; 2] = [AppLanguage::Ru, AppLanguage::En];
 
-    pub fn code(self) -> &'static str {
-        match self {
-            Self::Ru => "ru",
-            Self::En => "en",
-        }
-    }
-
     pub fn label(self) -> &'static str {
         match self {
             Self::Ru => "Русский",
@@ -112,6 +105,8 @@ pub fn tr(lang: AppLanguage, key: &str) -> &'static str {
         // Home
         (AppLanguage::Ru, "tagline") => "Восстановление речи · занятия дома",
         (AppLanguage::En, "tagline") => "Speech recovery · practice at home",
+        (AppLanguage::Ru, "version") => "Версия",
+        (AppLanguage::En, "version") => "Version",
         (AppLanguage::Ru, "pack") => "Набор",
         (AppLanguage::En, "pack") => "Pack",
         (AppLanguage::Ru, "level") => "Уровень",
