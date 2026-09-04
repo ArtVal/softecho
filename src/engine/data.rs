@@ -494,21 +494,49 @@ pub fn save_progress(progress: &Progress) -> Result<(), String> {
     atomic_write(&path, &bytes)
 }
 
-/// Запись через `.tmp` + rename, чтобы краш не оставлял обрезанный JSON.
+/// Запись через `.tmp` + rename, чтобы краш не оставлял обрезанный файл.
 fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
-    let tmp = path.with_extension("json.tmp");
+    let tmp = {
+        let mut name = path.as_os_str().to_owned();
+        name.push(".tmp");
+        std::path::PathBuf::from(name)
+    };
     fs::write(&tmp, bytes).map_err(|e| format!("Не удалось записать {tmp:?}: {e}"))?;
-    // На Windows rename не перезаписывает существующий файл.
-    if path.exists() {
-        fs::remove_file(path).map_err(|e| {
+
+    // Unix: rename поверх существующего — атомарно.
+    // Windows: rename не затирает цель → уводим старый в .bak, затем tmp→path, .bak удаляем.
+    // Так между шагами всегда есть либо path, либо .bak с прежним содержимым.
+    #[cfg(windows)]
+    {
+        let bak = {
+            let mut name = path.as_os_str().to_owned();
+            name.push(".bak");
+            std::path::PathBuf::from(name)
+        };
+        if path.exists() {
+            let _ = fs::remove_file(&bak);
+            fs::rename(path, &bak).map_err(|e| {
+                let _ = fs::remove_file(&tmp);
+                format!("Не удалось отложить {path:?}: {e}")
+            })?;
+        }
+        if let Err(e) = fs::rename(&tmp, path) {
             let _ = fs::remove_file(&tmp);
-            format!("Не удалось заменить {path:?}: {e}")
-        })?;
+            if bak.exists() {
+                let _ = fs::rename(&bak, path);
+            }
+            return Err(format!("Не удалось сохранить {path:?}: {e}"));
+        }
+        let _ = fs::remove_file(&bak);
+        Ok(())
     }
-    fs::rename(&tmp, path).map_err(|e| {
-        let _ = fs::remove_file(&tmp);
-        format!("Не удалось сохранить {path:?}: {e}")
-    })
+    #[cfg(not(windows))]
+    {
+        fs::rename(&tmp, path).map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            format!("Не удалось сохранить {path:?}: {e}")
+        })
+    }
 }
 
 /// Новый файл отчёта: `reports/softecho-report_<nanos>.txt`.
@@ -715,7 +743,9 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\"a\":1}");
         atomic_write(&path, b"{\"a\":2}").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\"a\":2}");
-        assert!(!path.with_extension("json.tmp").exists());
+        let mut tmp_name = path.as_os_str().to_owned();
+        tmp_name.push(".tmp");
+        assert!(!std::path::PathBuf::from(tmp_name).exists());
         let _ = fs::remove_dir_all(&dir);
     }
 

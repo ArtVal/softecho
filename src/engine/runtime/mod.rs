@@ -1,14 +1,18 @@
 //! Состояние и логика тренажёра (серверная часть).
 //! UI / будущий клиент общаются только через Command + геттеры + tick.
 
+mod pack_editor;
+
+pub use pack_editor::PackEditorState;
+
 use super::asr::{
     create_recognizer, AsrStatus, ListenConfig, ListenEvent, SpeechRecognizer,
 };
 use super::data::{
-    append_dictaphone_text, clone_pack_to_user, is_user_pack, list_packs_for, load_active_pack,
-    load_editable_pack, load_pack, load_progress, new_dictaphone_path, new_report_path,
-    pack_matches_language, save_dictaphone_text, save_progress, save_report_text, save_user_pack,
-    user_data_dir, vosk_model_dir, DEFAULT_PACK_ID, EditablePack, PackCatalogEntry,
+    append_dictaphone_text, list_packs_for, load_active_pack, load_pack, load_progress,
+    new_dictaphone_path, new_report_path, pack_matches_language, save_dictaphone_text,
+    save_progress, save_report_text, user_data_dir, vosk_model_dir, DEFAULT_PACK_ID,
+    PackCatalogEntry,
 };
 use super::exercise::{
     build_diagnosis_set, check_answer, infer_level, order_session_for_level_with_map, speech_matches,
@@ -135,6 +139,8 @@ pub struct Engine {
     playback_last_error: Arc<Mutex<Option<String>>>,
     /// Текст для UI после неудачного «Послушать».
     playback_error: Option<String>,
+    /// После Stop по PlayLastClip — снова запустить, когда поток освободится.
+    playback_pending_replay: bool,
     dictaphone: DictaphoneState,
     model_download: ModelDownloadState,
     model_download_rx: Option<Receiver<DownloadMsg>>,
@@ -146,15 +152,6 @@ pub struct Engine {
     asr_status_cache: AsrStatus,
     /// Результат последнего экспорта отчёта (путь или ошибка).
     report_export_note: Option<String>,
-}
-
-pub struct PackEditorState {
-    pub pack_id: String,
-    pub draft: EditablePack,
-    pub error: Option<String>,
-    pub note: Option<String>,
-    /// Есть правки после последнего сохранения.
-    pub dirty: bool,
 }
 
 impl Engine {
@@ -215,6 +212,7 @@ impl Engine {
             playback_busy: Arc::new(AtomicBool::new(false)),
             playback_last_error: Arc::new(Mutex::new(None)),
             playback_error: None,
+            playback_pending_replay: false,
             dictaphone: DictaphoneState::default(),
             model_download: ModelDownloadState::default(),
             model_download_rx: None,
@@ -514,164 +512,6 @@ impl Engine {
         }
     }
 
-    fn open_pack_editor(&mut self) {
-        self.abort_listen();
-        self.session = None;
-        let id = self.pack_id().to_string();
-        if !is_user_pack(&id) {
-            self.load_error = Some(
-                "Встроенный набор нельзя менять. Нажмите «Сделать копию» — правка будет в ваших данных."
-                    .into(),
-            );
-            self.screen = Screen::PackEditor;
-            self.pack_editor = None;
-            return;
-        }
-        match load_editable_pack(&id) {
-            Ok(draft) => {
-                self.load_error = None;
-                self.pack_editor = Some(PackEditorState {
-                    pack_id: id,
-                    draft,
-                    error: None,
-                    note: None,
-                    dirty: false,
-                });
-                self.screen = Screen::PackEditor;
-            }
-            Err(e) => {
-                self.load_error = Some(e);
-                self.pack_editor = None;
-                self.screen = Screen::Home;
-            }
-        }
-    }
-
-    fn clone_pack_for_edit(&mut self) {
-        self.abort_listen();
-        self.session = None;
-        let source = self.pack_id().to_string();
-        match clone_pack_to_user(&source, "") {
-            Ok((id, draft)) => {
-                self.pack = draft.to_active_pack();
-                self.progress.set_pack(&id);
-                self.persist_progress();
-                self.load_error = None;
-                self.pack_editor = Some(PackEditorState {
-                    pack_id: id,
-                    draft,
-                    error: None,
-                    note: Some("Копия сохранена. Можно править и сохранять.".into()),
-                    dirty: false,
-                });
-                self.screen = Screen::PackEditor;
-            }
-            Err(e) => {
-                self.load_error = Some(e);
-            }
-        }
-    }
-
-    fn editor_disable(&mut self, index: usize) {
-        let Some(ed) = self.pack_editor.as_mut() else {
-            return;
-        };
-        if index >= ed.draft.exercises.len() {
-            return;
-        }
-        if ed.draft.exercises.len() == 1 {
-            ed.error = Some("Нельзя отключить последнее активное задание.".into());
-            return;
-        }
-        let ex = ed.draft.exercises.remove(index);
-        ed.draft.disabled.push(ex);
-        ed.error = None;
-        ed.note = None;
-        ed.dirty = true;
-    }
-
-    fn editor_enable(&mut self, index: usize) {
-        let Some(ed) = self.pack_editor.as_mut() else {
-            return;
-        };
-        if index >= ed.draft.disabled.len() {
-            return;
-        }
-        let ex = ed.draft.disabled.remove(index);
-        ed.draft.exercises.push(ex);
-        ed.error = None;
-        ed.note = None;
-        ed.dirty = true;
-    }
-
-    fn editor_add_read_aloud(&mut self, prompt: String, text: String, stage: ExerciseStage) {
-        let Some(ed) = self.pack_editor.as_mut() else {
-            return;
-        };
-        let prompt = if prompt.trim().is_empty() {
-            "Скажите".into()
-        } else {
-            prompt.trim().to_string()
-        };
-        let text = text.trim().to_string();
-        if text.is_empty() {
-            ed.error = Some("Введите текст задания.".into());
-            return;
-        }
-        ed.draft.exercises.push(Exercise::ReadAloud {
-            stage: Some(stage),
-            prompt,
-            text,
-            speak: None,
-            image: None,
-        });
-        ed.error = None;
-        ed.note = Some("Задание добавлено — нажмите «Сохранить».".into());
-        ed.dirty = true;
-    }
-
-    fn editor_save(&mut self) {
-        let Some(ed) = self.pack_editor.as_ref() else {
-            return;
-        };
-        let id = ed.pack_id.clone();
-        let draft = ed.draft.clone();
-        match save_user_pack(&id, &draft) {
-            Ok(_) => {
-                self.pack = draft.to_active_pack();
-                if let Some(ed) = self.pack_editor.as_mut() {
-                    ed.error = None;
-                    ed.note = Some("Сохранено.".into());
-                    ed.draft = draft;
-                    ed.dirty = false;
-                }
-                self.load_error = None;
-            }
-            Err(e) => {
-                if let Some(ed) = self.pack_editor.as_mut() {
-                    ed.error = Some(e);
-                    ed.note = None;
-                }
-            }
-        }
-    }
-
-    /// Уход из редактора. `discard` — бросить несохранённые правки.
-    fn leave_pack_editor(&mut self, discard: bool) {
-        if let Some(ed) = self.pack_editor.as_mut() {
-            if ed.dirty && !discard {
-                ed.error = Some(
-                    "Есть несохранённые изменения. Сохраните или нажмите «Уйти без сохранения»."
-                        .into(),
-                );
-                ed.note = None;
-                return;
-            }
-        }
-        self.pack_editor = None;
-        self.screen = Screen::Home;
-    }
-
     pub fn current_exercise(&self) -> Option<&Exercise> {
         let s = self.session.as_ref()?;
         s.exercises.get(s.index)
@@ -964,9 +804,23 @@ impl Engine {
             return;
         }
         if self.playback_busy.load(Ordering::Relaxed) {
-            self.stop_playback();
+            // Остановить текущее и поставить повтор (UI шлёт Stop отдельно).
+            if let Some(stop) = &self.playback_stop {
+                stop.store(true, Ordering::Relaxed);
+            }
+            self.playback_stop = None;
+            self.playback_pending_replay = true;
             return;
         }
+        self.start_last_clip_playback();
+    }
+
+    fn start_last_clip_playback(&mut self) {
+        if self.last_clip.is_empty() {
+            self.playback_pending_replay = false;
+            return;
+        }
+        self.playback_pending_replay = false;
         self.playback_error = None;
         if let Ok(mut g) = self.playback_last_error.lock() {
             *g = None;
@@ -982,6 +836,7 @@ impl Engine {
     }
 
     fn stop_playback(&mut self) {
+        self.playback_pending_replay = false;
         if let Some(stop) = &self.playback_stop {
             stop.store(true, Ordering::Relaxed);
         }
@@ -1146,11 +1001,15 @@ impl Engine {
                 tick.want_repaint = true;
             }
         }
+        if self.playback_pending_replay && !self.playback_busy.load(Ordering::Relaxed) {
+            self.start_last_clip_playback();
+            tick.want_repaint = true;
+        }
         if matches!(self.model_download, ModelDownloadState::Working { .. }) {
             tick.want_repaint = true;
             tick.repaint_after.get_or_insert(Duration::from_millis(200));
         }
-        if self.playback_busy.load(Ordering::Relaxed) {
+        if self.playback_busy.load(Ordering::Relaxed) || self.playback_pending_replay {
             tick.want_repaint = true;
             tick.repaint_after.get_or_insert(Duration::from_millis(100));
         }
@@ -1192,13 +1051,16 @@ impl Engine {
                     self.please_wait = false;
                 }
                 ListenEvent::Utterance(phrase) => {
-                    self.append_dictaphone_phrase(&phrase);
-                    self.dictaphone.live_text.clear();
-                    if let Ok(mut g) = self.listen_live.lock() {
-                        g.clear();
-                    }
-                    if let Ok(mut g) = self.dictaphone.live_partial.lock() {
-                        g.clear();
+                    // Только диктофон (continuous). Иначе latent-запись в чужой transcript.
+                    if matches!(self.listen_purpose, Some(ListenPurpose::Dictaphone)) {
+                        self.append_dictaphone_phrase(&phrase);
+                        self.dictaphone.live_text.clear();
+                        if let Ok(mut g) = self.listen_live.lock() {
+                            g.clear();
+                        }
+                        if let Ok(mut g) = self.dictaphone.live_partial.lock() {
+                            g.clear();
+                        }
                     }
                 }
                 ListenEvent::Done(outcome) => {
