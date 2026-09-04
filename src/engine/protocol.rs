@@ -64,6 +64,8 @@ pub enum Command {
     /// Редактор набора (копия в данные пользователя).
     OpenPackEditor,
     LeavePackEditor,
+    /// Уйти из редактора, отбросив несохранённые правки.
+    DiscardPackEditor,
     /// Сделать редактируемую копию текущего набора и открыть редактор.
     ClonePackForEdit,
     EditorDisable(usize),

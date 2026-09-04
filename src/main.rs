@@ -15,15 +15,16 @@ fn main() -> eframe::Result<()> {
     #[cfg(feature = "asr")]
     engine::vosk_runtime::prepare();
 
-    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/softecho.png"))
-        .expect("иконка assets/softecho.png");
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([900.0, 700.0])
+        .with_min_inner_size([480.0, 420.0])
+        .with_title(format!("SoftEcho {}", crate::APP_VERSION));
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../assets/softecho.png")) {
+        viewport = viewport.with_icon(icon);
+    }
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 700.0])
-            .with_min_inner_size([480.0, 420.0])
-            .with_title(format!("SoftEcho {}", crate::APP_VERSION))
-            .with_icon(icon),
+        viewport,
         ..Default::default()
     };
 

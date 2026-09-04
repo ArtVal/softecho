@@ -488,7 +488,9 @@ impl UiApp {
             }
 
             let (pack_id, title, active_n, disabled_n, err, note) = {
-                let ed = self.engine.pack_editor().unwrap();
+                let Some(ed) = self.engine.pack_editor() else {
+                    return;
+                };
                 (
                     ed.pack_id.clone(),
                     ed.draft.title.clone(),
@@ -665,6 +667,13 @@ impl UiApp {
             ui.add_space(20.0);
             if big_button(ui, t.t("save"), Color32::from_rgb(40, 130, 90)).clicked() {
                 self.engine.handle(Command::EditorSave);
+            }
+            if self.engine.pack_editor().is_some_and(|ed| ed.dirty) {
+                ui.add_space(12.0);
+                if big_button(ui, t.t("editor_discard"), Color32::from_rgb(120, 90, 70)).clicked()
+                {
+                    self.engine.handle(Command::DiscardPackEditor);
+                }
             }
             ui.add_space(24.0);
         });
@@ -1562,6 +1571,10 @@ impl UiApp {
                             self.engine.handle(Command::PlayLastClip);
                         }
                     }
+                    if let Some(err) = self.engine.playback_error() {
+                        ui.add_space(8.0);
+                        ui.colored_label(Color32::from_rgb(160, 60, 40), err);
+                    }
                     ui.add_space(12.0);
                 }
             }
@@ -1694,6 +1707,10 @@ impl UiApp {
                     } else {
                         self.engine.handle(Command::PlayLastClip);
                     }
+                }
+                if let Some(err) = self.engine.playback_error() {
+                    ui.add_space(8.0);
+                    ui.colored_label(Color32::from_rgb(160, 60, 40), err);
                 }
             }
 
@@ -1856,6 +1873,10 @@ impl UiApp {
                             } else {
                                 self.engine.handle(Command::PlayLastClip);
                             }
+                        }
+                        if let Some(err) = self.engine.playback_error() {
+                            ui.add_space(8.0);
+                            ui.colored_label(Color32::from_rgb(160, 60, 40), err);
                         }
                     }
 

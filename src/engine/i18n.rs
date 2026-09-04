@@ -323,6 +323,8 @@ pub fn tr(lang: AppLanguage, key: &str) -> &'static str {
         (AppLanguage::En, "editor_text") => "Text",
         (AppLanguage::Ru, "editor_prompt_default") => "Скажите",
         (AppLanguage::En, "editor_prompt_default") => "Say",
+        (AppLanguage::Ru, "editor_discard") => "Уйти без сохранения",
+        (AppLanguage::En, "editor_discard") => "Leave without saving",
 
         // Progress
         (AppLanguage::Ru, "trend") => "Тренд занятий",

@@ -447,16 +447,44 @@ fn progress_path() -> Result<PathBuf, String> {
     Ok(data_dir()?.join("progress.json"))
 }
 
-pub fn load_progress() -> Progress {
+/// Загрузка прогресса. Второй элемент — предупреждение (битый JSON и т.п.).
+pub fn load_progress() -> (Progress, Option<String>) {
     let Ok(path) = progress_path() else {
-        return Progress::default();
+        return (Progress::default(), None);
     };
     let Ok(bytes) = fs::read(&path) else {
-        return Progress::default();
+        return (Progress::default(), None);
     };
-    let mut progress: Progress = serde_json::from_slice(&bytes).unwrap_or_default();
-    progress.speech_map.normalize_keys();
-    progress
+    match serde_json::from_slice::<Progress>(&bytes) {
+        Ok(mut progress) => {
+            progress.speech_map.normalize_keys();
+            (progress, None)
+        }
+        Err(e) => {
+            let backup_name = match backup_corrupt_progress(&path) {
+                Ok(bak) => bak.display().to_string(),
+                Err(bak_err) => format!("(копия не создалась: {bak_err})"),
+            };
+            (
+                Progress::default(),
+                Some(format!(
+                    "Файл прогресса повреждён ({e}). Копия: {backup_name}. Карта сброшена — новые занятия запишутся заново."
+                )),
+            )
+        }
+    }
+}
+
+/// Убрать битый `progress.json` в сторону, чтобы следующая запись не затирала улики молча.
+fn backup_corrupt_progress(path: &std::path::Path) -> Result<PathBuf, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let backup = path.with_file_name(format!("progress.json.corrupt-{secs}"));
+    fs::rename(path, &backup).map_err(|e| format!("Не удалось сохранить копию {backup:?}: {e}"))?;
+    Ok(backup)
 }
 
 pub fn save_progress(progress: &Progress) -> Result<(), String> {
@@ -666,6 +694,30 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\"a\":2}");
         assert!(!path.with_extension("json.tmp").exists());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn corrupt_progress_backed_up_with_warning() {
+        let tmp = std::env::temp_dir().join(format!("softecho-prog-bad-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        std::env::set_var("XDG_DATA_HOME", &tmp);
+        let dir = data_dir().expect("data dir");
+        let path = dir.join("progress.json");
+        fs::write(&path, b"{not-json").unwrap();
+        let (_progress, warn) = load_progress();
+        let warn = warn.expect("warning");
+        assert!(warn.contains("повреждён"), "{warn}");
+        assert!(!path.exists(), "битый файл должен быть убран");
+        let backups: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("progress.json.corrupt-"))
+            .collect();
+        assert_eq!(backups.len(), 1, "{backups:?}");
+        let _ = fs::remove_dir_all(&tmp);
+        std::env::remove_var("XDG_DATA_HOME");
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! Реальный вывод — только при feature = "asr" (cpal).
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 /// Частота захвата ASR / playback (как у Vosk).
@@ -14,10 +14,20 @@ pub const PLAYBACK_HZ: u32 = 16_000;
 pub const CAPTURE_MAX_SAMPLES: usize = PLAYBACK_HZ as usize * 60;
 
 /// Проиграть PCM в фоне. `stop` — досрочная остановка; по концу сбрасывает `busy`.
-pub fn play_pcm_16k(samples: Vec<i16>, stop: Arc<AtomicBool>, busy: Arc<AtomicBool>) {
+/// Ошибку динамика кладёт в `last_error` (UI читает через tick).
+pub fn play_pcm_16k(
+    samples: Vec<i16>,
+    stop: Arc<AtomicBool>,
+    busy: Arc<AtomicBool>,
+    last_error: Arc<Mutex<Option<String>>>,
+) {
     thread::spawn(move || {
         busy.store(true, Ordering::Relaxed);
-        let _ = play_blocking(&samples, &stop);
+        if let Err(e) = play_blocking(&samples, &stop) {
+            if let Ok(mut g) = last_error.lock() {
+                *g = Some(e);
+            }
+        }
         busy.store(false, Ordering::Relaxed);
         stop.store(false, Ordering::Relaxed);
     });

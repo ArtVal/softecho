@@ -131,6 +131,10 @@ pub struct Engine {
     last_clip: Vec<i16>,
     playback_stop: Option<Arc<AtomicBool>>,
     playback_busy: Arc<AtomicBool>,
+    /// Ошибка из потока воспроизведения (заполняет `play_pcm_16k`).
+    playback_last_error: Arc<Mutex<Option<String>>>,
+    /// Текст для UI после неудачного «Послушать».
+    playback_error: Option<String>,
     dictaphone: DictaphoneState,
     model_download: ModelDownloadState,
     model_download_rx: Option<Receiver<DownloadMsg>>,
@@ -145,23 +149,29 @@ pub struct PackEditorState {
     pub draft: EditablePack,
     pub error: Option<String>,
     pub note: Option<String>,
+    /// Есть правки после последнего сохранения.
+    pub dirty: bool,
 }
 
 impl Engine {
     pub fn new() -> Self {
-        let language = load_progress().language;
-        Self::create(vosk_model_dir(language))
+        let (progress, warn) = load_progress();
+        let model = vosk_model_dir(progress.language);
+        Self::create(progress, warn, model)
     }
 
-    fn create(model: Option<std::path::PathBuf>) -> Self {
-        let mut progress = load_progress();
+    fn create(
+        mut progress: Progress,
+        progress_warn: Option<String>,
+        model: Option<std::path::PathBuf>,
+    ) -> Self {
         let fallback = progress.language.default_pack_id();
         if let Some(id) = progress.pack_id.clone() {
             if !pack_matches_language(&id, progress.language) {
                 progress.set_pack(fallback);
             }
         }
-        let (pack, load_error) = match load_active_pack(&progress) {
+        let (pack, pack_error) = match load_active_pack(&progress) {
             Ok(p) => (p, None),
             Err(e) => match load_pack(fallback).or_else(|_| load_pack(DEFAULT_PACK_ID)) {
                 Ok(p) => (p, Some(e)),
@@ -174,6 +184,7 @@ impl Engine {
                 ),
             },
         };
+        let load_error = progress_warn.or(pack_error);
 
         let recognizer = Arc::new(Mutex::new(create_recognizer(model.as_deref())));
 
@@ -194,6 +205,8 @@ impl Engine {
             last_clip: Vec::new(),
             playback_stop: None,
             playback_busy: Arc::new(AtomicBool::new(false)),
+            playback_last_error: Arc::new(Mutex::new(None)),
+            playback_error: None,
             dictaphone: DictaphoneState::default(),
             model_download: ModelDownloadState::default(),
             model_download_rx: None,
@@ -206,7 +219,7 @@ impl Engine {
     /// Движок без загрузки модели Vosk (юнит-тесты логики).
     #[cfg(test)]
     fn new_logic_only() -> Self {
-        Self::create(None)
+        Self::create(Progress::default(), None, None)
     }
 
     fn reload_recognizer(&mut self) {
@@ -500,6 +513,7 @@ impl Engine {
                     draft,
                     error: None,
                     note: None,
+                    dirty: false,
                 });
                 self.screen = Screen::PackEditor;
             }
@@ -526,6 +540,7 @@ impl Engine {
                     draft,
                     error: None,
                     note: Some("Копия сохранена. Можно править и сохранять.".into()),
+                    dirty: false,
                 });
                 self.screen = Screen::PackEditor;
             }
@@ -550,6 +565,7 @@ impl Engine {
         ed.draft.disabled.push(ex);
         ed.error = None;
         ed.note = None;
+        ed.dirty = true;
     }
 
     fn editor_enable(&mut self, index: usize) {
@@ -563,6 +579,7 @@ impl Engine {
         ed.draft.exercises.push(ex);
         ed.error = None;
         ed.note = None;
+        ed.dirty = true;
     }
 
     fn editor_add_read_aloud(&mut self, prompt: String, text: String, stage: ExerciseStage) {
@@ -588,6 +605,7 @@ impl Engine {
         });
         ed.error = None;
         ed.note = Some("Задание добавлено — нажмите «Сохранить».".into());
+        ed.dirty = true;
     }
 
     fn editor_save(&mut self) {
@@ -603,6 +621,7 @@ impl Engine {
                     ed.error = None;
                     ed.note = Some("Сохранено.".into());
                     ed.draft = draft;
+                    ed.dirty = false;
                 }
                 self.load_error = None;
             }
@@ -613,6 +632,22 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// Уход из редактора. `discard` — бросить несохранённые правки.
+    fn leave_pack_editor(&mut self, discard: bool) {
+        if let Some(ed) = self.pack_editor.as_mut() {
+            if ed.dirty && !discard {
+                ed.error = Some(
+                    "Есть несохранённые изменения. Сохраните или нажмите «Уйти без сохранения»."
+                        .into(),
+                );
+                ed.note = None;
+                return;
+            }
+        }
+        self.pack_editor = None;
+        self.screen = Screen::Home;
     }
 
     pub fn current_exercise(&self) -> Option<&Exercise> {
@@ -910,11 +945,16 @@ impl Engine {
 
     fn play_last_clip(&mut self) {
         if self.last_clip.is_empty() {
+            self.playback_error = Some("Нет записи для прослушивания.".into());
             return;
         }
         if self.playback_busy.load(Ordering::Relaxed) {
             self.stop_playback();
             return;
+        }
+        self.playback_error = None;
+        if let Ok(mut g) = self.playback_last_error.lock() {
+            *g = None;
         }
         let stop = Arc::new(AtomicBool::new(false));
         self.playback_stop = Some(Arc::clone(&stop));
@@ -922,6 +962,7 @@ impl Engine {
             self.last_clip.clone(),
             stop,
             Arc::clone(&self.playback_busy),
+            Arc::clone(&self.playback_last_error),
         );
     }
 
@@ -1084,6 +1125,12 @@ impl Engine {
     pub fn tick(&mut self) -> TickResult {
         let mut tick = TickResult::default();
         self.poll_model_download(&mut tick);
+        if let Ok(mut g) = self.playback_last_error.lock() {
+            if let Some(e) = g.take() {
+                self.playback_error = Some(e);
+                tick.want_repaint = true;
+            }
+        }
         if matches!(self.model_download, ModelDownloadState::Working { .. }) {
             tick.want_repaint = true;
             tick.repaint_after.get_or_insert(Duration::from_millis(200));
@@ -1243,6 +1290,12 @@ impl Engine {
         match cmd {
             Command::GoHome => {
                 // Единый выход «В меню»: то же подчищение, что у Leave* с отдельных экранов.
+                if matches!(self.screen, Screen::PackEditor) {
+                    self.leave_pack_editor(false);
+                    if matches!(self.screen, Screen::PackEditor) {
+                        return;
+                    }
+                }
                 if matches!(self.screen, Screen::Dictaphone) {
                     self.clear_dictaphone_buffer();
                 }
@@ -1305,10 +1358,8 @@ impl Engine {
                 self.screen = Screen::Home;
             }
             Command::OpenPackEditor => self.open_pack_editor(),
-            Command::LeavePackEditor => {
-                self.pack_editor = None;
-                self.screen = Screen::Home;
-            }
+            Command::LeavePackEditor => self.leave_pack_editor(false),
+            Command::DiscardPackEditor => self.leave_pack_editor(true),
             Command::ClonePackForEdit => self.clone_pack_for_edit(),
             Command::EditorDisable(i) => self.editor_disable(i),
             Command::EditorEnable(i) => self.editor_enable(i),
@@ -1455,6 +1506,10 @@ impl Engine {
 
     pub fn has_last_clip(&self) -> bool {
         !self.last_clip.is_empty()
+    }
+
+    pub fn playback_error(&self) -> Option<&str> {
+        self.playback_error.as_deref()
     }
 
     pub fn is_playing_clip(&self) -> bool {
@@ -1966,6 +2021,28 @@ mod tests {
         assert!(eng.pack_editor().is_none());
         eng.handle(Command::LeavePackEditor);
         assert!(matches!(eng.screen(), Screen::Home));
+    }
+
+    #[test]
+    fn pack_editor_dirty_blocks_leave_until_discard() {
+        let tmp =
+            std::env::temp_dir().join(format!("softecho-editor-dirty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::env::set_var("XDG_DATA_HOME", &tmp);
+        let mut eng = Engine::new_logic_only();
+        eng.handle(Command::ClonePackForEdit);
+        assert!(eng.pack_editor().is_some());
+        eng.handle(Command::EditorDisable(0));
+        assert!(eng.pack_editor().unwrap().dirty);
+        eng.handle(Command::LeavePackEditor);
+        assert!(matches!(eng.screen(), Screen::PackEditor));
+        assert!(eng.pack_editor().unwrap().error.is_some());
+        eng.handle(Command::DiscardPackEditor);
+        assert!(matches!(eng.screen(), Screen::Home));
+        assert!(eng.pack_editor().is_none());
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::remove_var("XDG_DATA_HOME");
     }
 
     fn tiny_test_pack() -> ExercisePack {
