@@ -23,7 +23,7 @@
 
 ## Скачать готовый бинарник
 
-**Релизы:** [GitHub Releases](https://github.com/ArtVal/softecho/releases) — архивы `text` / `asr` и Windows **Setup.exe** для Windows, Linux и macOS (тег `v*`).
+**Релизы:** [GitHub Releases](https://github.com/ArtVal/softecho/releases) — архивы `text` / `asr` для Windows, Linux и macOS; Windows **Setup.exe** — только для Windows (тег `v*`).
 
 Запасной путь — артефакты CI:
 

@@ -494,6 +494,8 @@ pub fn tr(lang: AppLanguage, key: &str) -> &'static str {
         (AppLanguage::En, "err_mkdir") => "Could not create directory",
         (AppLanguage::Ru, "err_download") => "Не удалось скачать",
         (AppLanguage::En, "err_download") => "Download failed",
+        (AppLanguage::Ru, "err_download_cancel") => "Скачивание отменено",
+        (AppLanguage::En, "err_download_cancel") => "Download cancelled",
         (AppLanguage::Ru, "err_read") => "Ошибка чтения",
         (AppLanguage::En, "err_read") => "Read error",
         (AppLanguage::Ru, "err_write") => "Ошибка записи",

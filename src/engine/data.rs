@@ -307,7 +307,7 @@ pub fn save_user_pack(id: &str, editable: &EditablePack) -> Result<PathBuf, Stri
     let path = dir.join(format!("{id}.json"));
     let bytes = serde_json::to_vec_pretty(editable)
         .map_err(|e| format!("Не удалось сериализовать набор: {e}"))?;
-    fs::write(&path, bytes).map_err(|e| format!("Не удалось записать {path:?}: {e}"))?;
+    atomic_write(&path, &bytes)?;
     Ok(path)
 }
 
@@ -511,36 +511,35 @@ fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     })
 }
 
-/// Новый файл отчёта: `reports/softecho-report_YYYY….txt`.
+/// Новый файл отчёта: `reports/softecho-report_<nanos>.txt`.
 pub fn new_report_path() -> Result<PathBuf, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let dir = data_dir()?.join("reports");
     fs::create_dir_all(&dir).map_err(|e| format!("Не удалось создать {dir:?}: {e}"))?;
-    let secs = SystemTime::now()
+    let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
-    Ok(dir.join(format!("softecho-report_{secs}.txt")))
+    Ok(dir.join(format!("softecho-report_{nanos}.txt")))
 }
 
 pub fn save_report_text(path: &std::path::Path, text: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("Не удалось создать {parent:?}: {e}"))?;
     }
-    fs::write(path, text).map_err(|e| format!("Не удалось записать {path:?}: {e}"))
+    atomic_write(path, text.as_bytes())
 }
 
-/// Новый файл для длинного диктофона: `dictaphone_YYYYMMDD_HHMMSS.txt`.
+/// Новый файл для длинного диктофона: `dictaphone_<nanos>.txt`.
 pub fn new_dictaphone_path() -> Result<PathBuf, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let dir = data_dir()?.join("dictaphone");
     fs::create_dir_all(&dir).map_err(|e| format!("Не удалось создать {dir:?}: {e}"))?;
-    let secs = SystemTime::now()
+    let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let name = format!("dictaphone_{secs}.txt");
-    Ok(dir.join(name))
+    Ok(dir.join(format!("dictaphone_{nanos}.txt")))
 }
 
 /// Дописать фрагмент в txt (длинная запись — сразу на диск).
@@ -560,7 +559,7 @@ pub fn save_dictaphone_text(path: &std::path::Path, text: &str) -> Result<(), St
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("Не удалось создать {parent:?}: {e}"))?;
     }
-    fs::write(path, text).map_err(|e| format!("Не удалось записать {path:?}: {e}"))
+    atomic_write(path, text.as_bytes())
 }
 
 /// Каталог модели Vosk: рядом с exe (portable), cwd, или данные пользователя.
@@ -586,6 +585,30 @@ pub fn vosk_model_dir(language: AppLanguage) -> Option<PathBuf> {
     }
 
     candidates.into_iter().find(|p| p.is_dir())
+}
+
+/// Сериализация тестов, которые трогают `XDG_DATA_HOME` (иначе гонка между модулями).
+#[cfg(test)]
+pub(crate) fn with_temp_xdg_data_home<R>(f: impl FnOnce(&std::path::Path) -> R) -> R {
+    use std::sync::{Mutex, OnceLock};
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let lock = LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let tmp = std::env::temp_dir().join(format!(
+        "softecho-xdg-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+    std::env::set_var("XDG_DATA_HOME", &tmp);
+    let out = f(&tmp);
+    let _ = fs::remove_dir_all(&tmp);
+    std::env::remove_var("XDG_DATA_HOME");
+    out
 }
 
 #[cfg(test)]
@@ -698,26 +721,22 @@ mod tests {
 
     #[test]
     fn corrupt_progress_backed_up_with_warning() {
-        let tmp = std::env::temp_dir().join(format!("softecho-prog-bad-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-        std::env::set_var("XDG_DATA_HOME", &tmp);
-        let dir = data_dir().expect("data dir");
-        let path = dir.join("progress.json");
-        fs::write(&path, b"{not-json").unwrap();
-        let (_progress, warn) = load_progress();
-        let warn = warn.expect("warning");
-        assert!(warn.contains("повреждён"), "{warn}");
-        assert!(!path.exists(), "битый файл должен быть убран");
-        let backups: Vec<_> = fs::read_dir(&dir)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.starts_with("progress.json.corrupt-"))
-            .collect();
-        assert_eq!(backups.len(), 1, "{backups:?}");
-        let _ = fs::remove_dir_all(&tmp);
-        std::env::remove_var("XDG_DATA_HOME");
+        with_temp_xdg_data_home(|_tmp| {
+            let dir = data_dir().expect("data dir");
+            let path = dir.join("progress.json");
+            fs::write(&path, b"{not-json").unwrap();
+            let (_progress, warn) = load_progress();
+            let warn = warn.expect("warning");
+            assert!(warn.contains("повреждён"), "{warn}");
+            assert!(!path.exists(), "битый файл должен быть убран");
+            let backups: Vec<_> = fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.starts_with("progress.json.corrupt-"))
+                .collect();
+            assert_eq!(backups.len(), 1, "{backups:?}");
+        });
     }
 
     #[test]

@@ -3,8 +3,10 @@
 use std::fs::{self, File};
 use std::io::{copy, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::i18n::{tr, AppLanguage};
 
@@ -18,9 +20,14 @@ pub enum DownloadMsg {
     Err(String),
 }
 
-pub fn spawn_model_download(dest_parent: PathBuf, language: AppLanguage, tx: Sender<DownloadMsg>) {
+pub fn spawn_model_download(
+    dest_parent: PathBuf,
+    language: AppLanguage,
+    tx: Sender<DownloadMsg>,
+    cancel: Arc<AtomicBool>,
+) {
     std::thread::spawn(move || {
-        if let Err(e) = download_model(&dest_parent, language, &tx) {
+        if let Err(e) = download_model(&dest_parent, language, &tx, &cancel) {
             let _ = tx.send(DownloadMsg::Err(e));
         }
     });
@@ -30,18 +37,28 @@ fn download_model(
     dest_parent: &Path,
     language: AppLanguage,
     tx: &Sender<DownloadMsg>,
+    cancel: &AtomicBool,
 ) -> Result<(), String> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err(tr(language, "err_download_cancel").into());
+    }
     fs::create_dir_all(dest_parent).map_err(|e| {
         format!("{}: {e}", tr(language, "err_mkdir"))
     })?;
 
-    let tmp_zip = dest_parent.join("vosk-model-download.tmp.zip");
+    // Уникальное имя: смена языка / повторный старт не дерутся за один tmp.
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let tmp_zip = dest_parent.join(format!(
+        "vosk-model-download-{}-{stamp}.tmp.zip",
+        language.vosk_model_dir_name()
+    ));
     let _ = fs::remove_file(&tmp_zip);
 
-    let result = download_model_inner(dest_parent, language, &tmp_zip, tx);
-    if result.is_err() {
-        let _ = fs::remove_file(&tmp_zip);
-    }
+    let result = download_model_inner(dest_parent, language, &tmp_zip, tx, cancel);
+    let _ = fs::remove_file(&tmp_zip);
     result
 }
 
@@ -50,6 +67,7 @@ fn download_model_inner(
     language: AppLanguage,
     tmp_zip: &Path,
     tx: &Sender<DownloadMsg>,
+    cancel: &AtomicBool,
 ) -> Result<(), String> {
     let size = language.vosk_model_size_hint();
     let _ = tx.send(DownloadMsg::Phase(format!(
@@ -75,6 +93,9 @@ fn download_model_inner(
     let mut last_percent = 255u8;
 
     loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(tr(language, "err_download_cancel").into());
+        }
         let n = reader
             .read(&mut buf)
             .map_err(|e| format!("{}: {e}", tr(language, "err_read")))?;
@@ -94,18 +115,19 @@ fn download_model_inner(
     }
     drop(file);
 
-    let _ = tx.send(DownloadMsg::Phase(tr(language, "download_unpack").into()));
+    if cancel.load(Ordering::Relaxed) {
+        return Err(tr(language, "err_download_cancel").into());
+    }
 
-    let model_name = language.vosk_model_dir_name();
-    let model_path = dest_parent.join(model_name);
-    if model_path.is_dir() {
-        fs::remove_dir_all(&model_path)
-            .map_err(|e| format!("{}: {e}", tr(language, "err_clear_dir")))?;
+    let _ = tx.send(DownloadMsg::Phase(tr(language, "download_unpack").into()));
+    if cancel.load(Ordering::Relaxed) {
+        return Err(tr(language, "err_download_cancel").into());
     }
 
     extract_zip(tmp_zip, language, dest_parent)?;
-    let _ = fs::remove_file(tmp_zip);
 
+    let model_name = language.vosk_model_dir_name();
+    let model_path = dest_parent.join(model_name);
     if !model_path.is_dir() {
         return Err(format!("{} {model_name}", tr(language, "err_zip_missing")));
     }
@@ -115,17 +137,46 @@ fn download_model_inner(
 }
 
 fn extract_zip(zip_path: &Path, language: AppLanguage, dest_parent: &Path) -> Result<(), String> {
+    let model_name = language.vosk_model_dir_name();
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let staging = dest_parent.join(format!("{model_name}.staging-{stamp}"));
+    let _ = fs::remove_dir_all(&staging);
+    fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+
     let file = File::open(zip_path)
         .map_err(|e| format!("{}: {e}", tr(language, "err_zip_open")))?;
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| format!("{}: {e}", tr(language, "err_zip_bad")))?;
 
+    let mut wrote_any = false;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
         let Some(relative) = entry.enclosed_name().map(|p| p.to_owned()) else {
             continue;
         };
-        let out = dest_parent.join(relative);
+        let mut comps = relative.components();
+        let Some(std::path::Component::Normal(first)) = comps.next() else {
+            continue;
+        };
+        // Только файлы внутри каталога модели — иначе zip мог бы затереть progress/packs.
+        if first != std::ffi::OsStr::new(model_name) {
+            continue;
+        }
+        let rest: PathBuf = comps.collect();
+        if rest.as_os_str().is_empty() {
+            if entry.is_dir() {
+                continue;
+            }
+            // файл прямо как model_name — не ожидаем
+            continue;
+        }
+        let out = staging.join(&rest);
+        if !out.starts_with(&staging) {
+            continue;
+        }
         if entry.is_dir() {
             fs::create_dir_all(&out).map_err(|e| e.to_string())?;
         } else {
@@ -134,8 +185,31 @@ fn extract_zip(zip_path: &Path, language: AppLanguage, dest_parent: &Path) -> Re
             }
             let mut out_file = File::create(&out).map_err(|e| e.to_string())?;
             copy(&mut entry, &mut out_file).map_err(|e| e.to_string())?;
+            wrote_any = true;
         }
     }
+
+    if !wrote_any {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(format!("{} {model_name}", tr(language, "err_zip_missing")));
+    }
+
+    let final_path = dest_parent.join(model_name);
+    let backup = dest_parent.join(format!("{model_name}.old-{stamp}"));
+    if final_path.is_dir() {
+        fs::rename(&final_path, &backup).map_err(|e| {
+            let _ = fs::remove_dir_all(&staging);
+            format!("{}: {e}", tr(language, "err_clear_dir"))
+        })?;
+    }
+    if let Err(e) = fs::rename(&staging, &final_path) {
+        let _ = fs::remove_dir_all(&staging);
+        if backup.is_dir() {
+            let _ = fs::rename(&backup, &final_path);
+        }
+        return Err(format!("{}: {e}", tr(language, "err_write")));
+    }
+    let _ = fs::remove_dir_all(&backup);
     Ok(())
 }
 
@@ -172,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_zip_does_not_require_model_dir_in_archive_name() {
+    fn extract_zip_rejects_entries_outside_model_dir() {
         let model_name = AppLanguage::En.vosk_model_dir_name();
         let dir = std::env::temp_dir().join(format!("softecho-zip-bad-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -183,9 +257,13 @@ mod tests {
         let options = SimpleFileOptions::default();
         zip.start_file("other.txt", options).unwrap();
         zip.write_all(b"x").unwrap();
+        zip.start_file("progress.json", options).unwrap();
+        zip.write_all(b"{}").unwrap();
         zip.finish().unwrap();
-        extract_zip(&zip_path, AppLanguage::En, &dir).unwrap();
+        assert!(extract_zip(&zip_path, AppLanguage::En, &dir).is_err());
         assert!(!dir.join(model_name).exists());
+        assert!(!dir.join("other.txt").exists());
+        assert!(!dir.join("progress.json").exists());
         let _ = fs::remove_dir_all(&dir);
     }
 }

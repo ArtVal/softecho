@@ -138,8 +138,12 @@ pub struct Engine {
     dictaphone: DictaphoneState,
     model_download: ModelDownloadState,
     model_download_rx: Option<Receiver<DownloadMsg>>,
+    /// Отмена фонового скачивания (смена языка / новый старт).
+    model_download_cancel: Option<Arc<AtomicBool>>,
     model_download_note: Option<String>,
     pack_editor: Option<PackEditorState>,
+    /// Кэш статуса ASR, если mutex занят listen'ом.
+    asr_status_cache: AsrStatus,
     /// Результат последнего экспорта отчёта (путь или ошибка).
     report_export_note: Option<String>,
 }
@@ -187,6 +191,10 @@ impl Engine {
         let load_error = progress_warn.or(pack_error);
 
         let recognizer = Arc::new(Mutex::new(create_recognizer(model.as_deref())));
+        let asr_status_cache = recognizer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .status();
 
         Self {
             screen: Screen::Home,
@@ -210,8 +218,10 @@ impl Engine {
             dictaphone: DictaphoneState::default(),
             model_download: ModelDownloadState::default(),
             model_download_rx: None,
+            model_download_cancel: None,
             model_download_note: None,
             pack_editor: None,
+            asr_status_cache,
             report_export_note: None,
         }
     }
@@ -225,9 +235,19 @@ impl Engine {
     fn reload_recognizer(&mut self) {
         self.abort_listen();
         let model = vosk_model_dir(self.progress.language);
-        if let Ok(mut r) = self.recognizer.lock() {
-            *r = create_recognizer(model.as_deref());
+        let mut r = self.recognizer.lock().unwrap_or_else(|e| e.into_inner());
+        *r = create_recognizer(model.as_deref());
+        self.asr_status_cache = r.status();
+    }
+
+    fn cancel_model_download(&mut self) {
+        if let Some(cancel) = &self.model_download_cancel {
+            cancel.store(true, Ordering::Relaxed);
         }
+        self.model_download_cancel = None;
+        self.model_download_rx = None;
+        self.model_download = ModelDownloadState::Idle;
+        self.model_download_note = None;
     }
 
     fn set_language(&mut self, language: AppLanguage) {
@@ -236,10 +256,8 @@ impl Engine {
         }
         self.abort_listen();
         self.session = None;
-        // Сбросить загрузку прошлой модели: иначе старый поток держит канал.
-        self.model_download_rx = None;
-        self.model_download = ModelDownloadState::Idle;
-        self.model_download_note = None;
+        // Остановить поток прошлой модели: иначе tmp/модель дерутся со сменой языка.
+        self.cancel_model_download();
         self.progress.set_language(language);
         let fallback = language.default_pack_id();
         let current = self.pack_id().to_string();
@@ -280,13 +298,15 @@ impl Engine {
 
         let language = self.progress.language;
         let (tx, rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
         self.model_download_rx = Some(rx);
+        self.model_download_cancel = Some(Arc::clone(&cancel));
         self.model_download = ModelDownloadState::Working {
             label: super::i18n::tr(language, "download_prepare").into(),
             percent: None,
         };
         self.model_download_note = None;
-        spawn_model_download(dest, language, tx);
+        spawn_model_download(dest, language, tx, cancel);
     }
 
     fn poll_model_download(&mut self, tick: &mut TickResult) {
@@ -320,6 +340,7 @@ impl Engine {
                 }
                 DownloadMsg::Done => {
                     self.model_download_rx = None;
+                    self.model_download_cancel = None;
                     self.reload_recognizer();
                     match self.asr_status() {
                         AsrStatus::Ready => {
@@ -352,6 +373,7 @@ impl Engine {
                 }
                 DownloadMsg::Err(e) => {
                     self.model_download_rx = None;
+                    self.model_download_cancel = None;
                     self.model_download = ModelDownloadState::Failed(e);
                     tick.want_repaint = true;
                 }
@@ -657,11 +679,7 @@ impl Engine {
 
     fn submit(&mut self, answer: UserAnswer) {
         // Отменяем отложенный ASR, чтобы не зачесть ответ дважды.
-        self.listen_rx = None;
-        self.listen_target = None;
-        self.listen_purpose = None;
-        self.please_wait = false;
-        self.stop_playback();
+        self.abort_listen();
 
         let heard_fallback = self
             .session
@@ -721,10 +739,7 @@ impl Engine {
     }
 
     fn advance_after_feedback(&mut self, skip_repeat: bool) {
-        self.listen_rx = None;
-        self.listen_target = None;
-        self.listen_purpose = None;
-        self.stop_playback();
+        self.abort_listen();
         self.last_clip.clear();
         let Some(session) = self.session.as_mut() else {
             return;
@@ -1271,18 +1286,55 @@ impl Engine {
         if let Some(stop) = &self.exercise_listen_stop {
             stop.store(true, Ordering::Relaxed);
         }
-        self.exercise_listen_stop = None;
-        self.listen_rx = None;
-        self.listen_target = None;
-        self.listen_purpose = None;
-        self.please_wait = false;
         if let Some(stop) = &self.dictaphone.stop {
             stop.store(true, Ordering::Relaxed);
         }
+        // Спасти уже пришедшие Done/Utterance до сброса канала.
+        if let Some(rx) = self.listen_rx.take() {
+            self.drain_listen_rx_on_abort(rx);
+        }
+        self.exercise_listen_stop = None;
+        self.listen_target = None;
+        self.listen_purpose = None;
+        self.please_wait = false;
         self.dictaphone.stop = None;
         self.dictaphone.listening = false;
         if let Some(session) = self.session.as_mut() {
             session.listening = false;
+        }
+    }
+
+    /// Неблокирующий drain: сохранить PCM / хвост диктофона из очереди.
+    fn drain_listen_rx_on_abort(&mut self, rx: Receiver<ListenEvent>) {
+        let purpose = self.listen_purpose;
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                ListenEvent::Utterance(phrase)
+                    if matches!(purpose, Some(ListenPurpose::Dictaphone)) =>
+                {
+                    self.append_dictaphone_phrase(&phrase);
+                }
+                ListenEvent::Done(Ok(heard)) => {
+                    self.store_last_clip(heard.pcm);
+                    if matches!(purpose, Some(ListenPurpose::Dictaphone)) {
+                        self.flush_dictaphone_live_tail();
+                        if self.dictaphone.transcript.is_empty() && !heard.text.is_empty() {
+                            self.append_dictaphone_phrase(&heard.text);
+                        }
+                    } else if matches!(purpose, Some(ListenPurpose::Exercise)) {
+                        let text = self.exercise_heard_text(&heard.text);
+                        if let Some(session) = self.session.as_mut() {
+                            session.live_text = text;
+                        }
+                    }
+                }
+                ListenEvent::Done(Err(_)) => {
+                    if matches!(purpose, Some(ListenPurpose::Dictaphone)) {
+                        self.flush_dictaphone_live_tail();
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -1296,6 +1348,8 @@ impl Engine {
                         return;
                     }
                 }
+                // Сначала flush listen (PCM/хвост), потом очистка диктофона.
+                self.abort_listen();
                 if matches!(self.screen, Screen::Dictaphone) {
                     self.clear_dictaphone_buffer();
                 }
@@ -1305,7 +1359,6 @@ impl Engine {
                     }
                     self.model_download_note = None;
                 }
-                self.abort_listen();
                 self.session = None;
                 self.pack_editor = None;
                 self.report_export_note = None;
@@ -1627,7 +1680,10 @@ impl Engine {
     pub fn asr_status(&self) -> AsrStatus {
         match self.recognizer.try_lock() {
             Ok(r) => r.status(),
-            Err(_) => AsrStatus::Ready,
+            Err(std::sync::TryLockError::WouldBlock) => self.asr_status_cache.clone(),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                AsrStatus::Error("Сбой распознавателя. Перезапустите приложение.".into())
+            }
         }
     }
 
@@ -1677,6 +1733,7 @@ impl SessionState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::data::with_temp_xdg_data_home;
     use crate::engine::protocol::{ModelDownloadState, Screen};
 
     #[test]
@@ -1991,26 +2048,22 @@ mod tests {
 
     #[test]
     fn export_progress_report_writes_file() {
-        let tmp = std::env::temp_dir().join(format!("softecho-report-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-        std::env::set_var("XDG_DATA_HOME", &tmp);
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::ExportProgressReport);
-        let note = eng.report_export_note().expect("note").to_string();
-        assert!(
-            note.contains("Отчёт сохранён") || note.contains("Report saved"),
-            "{note}"
-        );
-        assert!(note.contains("softecho-report_") && note.contains(".txt"), "{note}");
-        let path = note
-            .split(": ")
-            .nth(1)
-            .expect("path after colon");
-        let body = std::fs::read_to_string(path).expect("report file");
-        assert!(body.contains("SoftEcho"));
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::env::remove_var("XDG_DATA_HOME");
+        with_temp_xdg_data_home(|_tmp| {
+            let mut eng = Engine::new_logic_only();
+            eng.handle(Command::ExportProgressReport);
+            let note = eng.report_export_note().expect("note").to_string();
+            assert!(
+                note.contains("Отчёт сохранён") || note.contains("Report saved"),
+                "{note}"
+            );
+            assert!(
+                note.contains("softecho-report_") && note.contains(".txt"),
+                "{note}"
+            );
+            let path = note.split(": ").nth(1).expect("path after colon");
+            let body = std::fs::read_to_string(path).expect("report file");
+            assert!(body.contains("SoftEcho"));
+        });
     }
 
     #[test]
@@ -2025,24 +2078,23 @@ mod tests {
 
     #[test]
     fn pack_editor_dirty_blocks_leave_until_discard() {
-        let tmp =
-            std::env::temp_dir().join(format!("softecho-editor-dirty-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-        std::env::set_var("XDG_DATA_HOME", &tmp);
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::ClonePackForEdit);
-        assert!(eng.pack_editor().is_some());
-        eng.handle(Command::EditorDisable(0));
-        assert!(eng.pack_editor().unwrap().dirty);
-        eng.handle(Command::LeavePackEditor);
-        assert!(matches!(eng.screen(), Screen::PackEditor));
-        assert!(eng.pack_editor().unwrap().error.is_some());
-        eng.handle(Command::DiscardPackEditor);
-        assert!(matches!(eng.screen(), Screen::Home));
-        assert!(eng.pack_editor().is_none());
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::env::remove_var("XDG_DATA_HOME");
+        with_temp_xdg_data_home(|_tmp| {
+            let mut eng = Engine::new_logic_only();
+            eng.handle(Command::ClonePackForEdit);
+            assert!(
+                eng.pack_editor().is_some(),
+                "clone failed: {:?}",
+                eng.load_error()
+            );
+            eng.handle(Command::EditorDisable(0));
+            assert!(eng.pack_editor().unwrap().dirty);
+            eng.handle(Command::LeavePackEditor);
+            assert!(matches!(eng.screen(), Screen::PackEditor));
+            assert!(eng.pack_editor().unwrap().error.is_some());
+            eng.handle(Command::DiscardPackEditor);
+            assert!(matches!(eng.screen(), Screen::Home));
+            assert!(eng.pack_editor().is_none());
+        });
     }
 
     fn tiny_test_pack() -> ExercisePack {
@@ -2367,16 +2419,16 @@ mod tests {
     #[test]
     #[cfg(feature = "asr")]
     fn start_model_download_begins_when_model_missing() {
-        let tmp = std::env::temp_dir().join(format!("softecho-data-{}", std::process::id()));
-        std::env::set_var("XDG_DATA_HOME", &tmp);
-        let mut eng = Engine::new_logic_only();
-        assert!(matches!(eng.asr_status(), AsrStatus::ModelMissing));
-        eng.handle(Command::StartModelDownload);
-        assert!(matches!(
-            eng.model_download(),
-            ModelDownloadState::Working { .. }
-        ));
-        let _ = std::fs::remove_dir_all(&tmp);
+        with_temp_xdg_data_home(|_tmp| {
+            let mut eng = Engine::new_logic_only();
+            assert!(matches!(eng.asr_status(), AsrStatus::ModelMissing));
+            eng.handle(Command::StartModelDownload);
+            assert!(matches!(
+                eng.model_download(),
+                ModelDownloadState::Working { .. }
+            ));
+            eng.cancel_model_download();
+        });
     }
 
     #[test]
