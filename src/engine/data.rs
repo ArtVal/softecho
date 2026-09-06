@@ -494,11 +494,16 @@ pub fn save_progress(progress: &Progress) -> Result<(), String> {
     atomic_write(&path, &bytes)
 }
 
-/// Запись через `.tmp` + rename, чтобы краш не оставлял обрезанный файл.
+/// Запись через уникальный `.tmp` + rename, чтобы краш не оставлял обрезанный файл
+/// и параллельные писатели не делили один `path.tmp`.
 fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     let tmp = {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
         let mut name = path.as_os_str().to_owned();
-        name.push(".tmp");
+        name.push(format!(".{}.{}.tmp", std::process::id(), nanos));
         std::path::PathBuf::from(name)
     };
     fs::write(&tmp, bytes).map_err(|e| format!("Не удалось записать {tmp:?}: {e}"))?;
@@ -633,8 +638,11 @@ pub(crate) fn with_temp_xdg_data_home<R>(f: impl FnOnce(&std::path::Path) -> R) 
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&tmp).unwrap();
     std::env::set_var("XDG_DATA_HOME", &tmp);
+    // Разрешает persist_progress в runtime-тестах (см. Engine::persist_progress).
+    std::env::set_var("SOFTECHO_ALLOW_PROGRESS_WRITE", "1");
     let out = f(&tmp);
     let _ = fs::remove_dir_all(&tmp);
+    std::env::remove_var("SOFTECHO_ALLOW_PROGRESS_WRITE");
     std::env::remove_var("XDG_DATA_HOME");
     out
 }
@@ -646,29 +654,32 @@ mod tests {
 
     #[test]
     fn all_builtin_packs_load() {
-        for entry in list_packs_for(None) {
-            let pack = load_pack(&entry.id).expect("набор должен разбираться");
-            assert_eq!(pack.title, entry.title);
-            assert!(!pack.exercises.is_empty());
-        }
-        assert!(list_packs_for(None).len() >= 26);
-        assert!(
-            list_packs_for(Some(AppLanguage::Ru))
-                .iter()
-                .any(|p| p.id == "pictures")
-        );
-        let pics = load_pack("pictures").expect("pictures");
-        assert!(pics.exercises.iter().any(|e| e.image_id().is_some()));
-        let en = list_packs_for(Some(AppLanguage::En));
-        assert!(en.iter().any(|e| e.id == "starter_en"));
-        assert!(en.iter().any(|e| e.id == "sounds_en"));
-        assert!(en.iter().any(|e| e.id == "daily_en"));
-        assert!(en.iter().any(|e| e.id == "twisters_en"));
-        assert!(en.iter().any(|e| e.id == "body_en"));
-        assert!(en.iter().any(|e| e.id == "transport_en"));
-        assert!(en.iter().any(|e| e.id == "rhymes_en"));
-        assert!(en.len() >= 13);
-        assert!(!en.iter().any(|e| e.id == "daily"));
+        // Пустой user-каталог: иначе my-starter.json из домашнего XDG ломает load_pack.
+        with_temp_xdg_data_home(|_tmp| {
+            for entry in list_packs_for(None) {
+                let pack = load_pack(&entry.id).expect("набор должен разбираться");
+                assert_eq!(pack.title, entry.title);
+                assert!(!pack.exercises.is_empty());
+            }
+            assert!(list_packs_for(None).len() >= 26);
+            assert!(
+                list_packs_for(Some(AppLanguage::Ru))
+                    .iter()
+                    .any(|p| p.id == "pictures")
+            );
+            let pics = load_pack("pictures").expect("pictures");
+            assert!(pics.exercises.iter().any(|e| e.image_id().is_some()));
+            let en = list_packs_for(Some(AppLanguage::En));
+            assert!(en.iter().any(|e| e.id == "starter_en"));
+            assert!(en.iter().any(|e| e.id == "sounds_en"));
+            assert!(en.iter().any(|e| e.id == "daily_en"));
+            assert!(en.iter().any(|e| e.id == "twisters_en"));
+            assert!(en.iter().any(|e| e.id == "body_en"));
+            assert!(en.iter().any(|e| e.id == "transport_en"));
+            assert!(en.iter().any(|e| e.id == "rhymes_en"));
+            assert!(en.len() >= 13);
+            assert!(!en.iter().any(|e| e.id == "daily"));
+        });
     }
 
     #[test]
@@ -743,9 +754,14 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\"a\":1}");
         atomic_write(&path, b"{\"a\":2}").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\"a\":2}");
-        let mut tmp_name = path.as_os_str().to_owned();
-        tmp_name.push(".tmp");
-        assert!(!std::path::PathBuf::from(tmp_name).exists());
+        // Уникальные tmp после успешного rename не должны остаться рядом с path.
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "остались tmp: {leftovers:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 

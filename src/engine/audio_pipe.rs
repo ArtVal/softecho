@@ -2,7 +2,7 @@
 //! Тестируется отдельно — это стык для клиент–сервера / любого ASR.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -28,6 +28,8 @@ pub struct AudioPipe {
     q: Mutex<VecDeque<Vec<i16>>>,
     cap: usize,
     pause_input: AtomicBool,
+    /// Кадры, отброшенные из‑за переполнения буфера (не из‑за pause).
+    dropped_full: AtomicU64,
 }
 
 impl AudioPipe {
@@ -36,6 +38,7 @@ impl AudioPipe {
             q: Mutex::new(VecDeque::with_capacity(cap)),
             cap,
             pause_input: AtomicBool::new(false),
+            dropped_full: AtomicU64::new(0),
         })
     }
 
@@ -51,17 +54,25 @@ impl AudioPipe {
         self.pause_input.load(Ordering::Relaxed)
     }
 
-    pub fn send_frame(&self, frame: Vec<i16>) {
+    /// Сколько кадров отброшено из‑за полной очереди с момента создания / последнего сброса.
+    pub fn dropped_full_count(&self) -> u64 {
+        self.dropped_full.load(Ordering::Relaxed)
+    }
+
+    /// `true`, если кадр принят в очередь.
+    pub fn send_frame(&self, frame: Vec<i16>) -> bool {
         if self.is_paused() {
-            return;
+            return false;
         }
         let Ok(mut q) = self.q.lock() else {
-            return;
+            return false;
         };
         if q.len() >= self.cap {
-            return;
+            self.dropped_full.fetch_add(1, Ordering::Relaxed);
+            return false;
         }
         q.push_back(frame);
+        true
     }
 
     pub fn try_recv(&self) -> Option<Vec<i16>> {
@@ -171,9 +182,10 @@ mod tests {
     #[test]
     fn pipe_full_does_not_drop_oldest() {
         let pipe = AudioPipe::new(2);
-        pipe.send_frame(vec![1]);
-        pipe.send_frame(vec![2]);
-        pipe.send_frame(vec![3]); // отброшен
+        assert!(pipe.send_frame(vec![1]));
+        assert!(pipe.send_frame(vec![2]));
+        assert!(!pipe.send_frame(vec![3])); // отброшен
+        assert_eq!(pipe.dropped_full_count(), 1);
         assert_eq!(pipe.len(), 2);
         assert_eq!(pipe.try_recv().unwrap(), vec![1]);
         assert_eq!(pipe.try_recv().unwrap(), vec![2]);

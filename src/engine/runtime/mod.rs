@@ -380,6 +380,11 @@ impl Engine {
     }
 
     fn persist_progress(&mut self) {
+        // Юнит-тесты без with_temp_xdg_data_home не пишут в реальный progress.json.
+        #[cfg(test)]
+        if std::env::var_os("SOFTECHO_ALLOW_PROGRESS_WRITE").is_none() {
+            return;
+        }
         match save_progress(&self.progress) {
             Ok(()) => self.save_error = None,
             Err(e) => self.save_error = Some(e),
