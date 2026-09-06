@@ -684,50 +684,56 @@ mod tests {
 
     #[test]
     fn starter_pack_loads_and_validates() {
-        let pack = load_pack(DEFAULT_PACK_ID).expect("starter.json должен разбираться");
-        assert_eq!(pack.title, "Звуки → слоги → слова → фразы");
-        assert!(pack
-            .exercises
-            .iter()
-            .any(|e| e.stage() == ExerciseStage::Sound));
-        assert!(pack
-            .exercises
-            .iter()
-            .any(|e| e.stage() == ExerciseStage::Syllable));
-        assert!(pack
-            .exercises
-            .iter()
-            .any(|e| e.stage() == ExerciseStage::Word));
-        assert!(pack
-            .exercises
-            .iter()
-            .any(|e| e.stage() == ExerciseStage::Phrase));
+        with_temp_xdg_data_home(|_tmp| {
+            let pack = load_pack(DEFAULT_PACK_ID).expect("starter.json должен разбираться");
+            assert_eq!(pack.title, "Звуки → слоги → слова → фразы");
+            assert!(pack
+                .exercises
+                .iter()
+                .any(|e| e.stage() == ExerciseStage::Sound));
+            assert!(pack
+                .exercises
+                .iter()
+                .any(|e| e.stage() == ExerciseStage::Syllable));
+            assert!(pack
+                .exercises
+                .iter()
+                .any(|e| e.stage() == ExerciseStage::Word));
+            assert!(pack
+                .exercises
+                .iter()
+                .any(|e| e.stage() == ExerciseStage::Phrase));
+        });
     }
 
     #[test]
     fn load_active_pack_uses_progress_id() {
-        let mut p = Progress::default();
-        p.pack_id = Some("greetings".into());
-        let pack = load_active_pack(&p).unwrap();
-        assert_eq!(pack.title, "Приветствия");
+        with_temp_xdg_data_home(|_tmp| {
+            let mut p = Progress::default();
+            p.pack_id = Some("greetings".into());
+            let pack = load_active_pack(&p).unwrap();
+            assert_eq!(pack.title, "Приветствия");
+        });
     }
 
     #[test]
     fn sounds_pack_starts_with_vowels() {
-        let pack = load_pack("sounds").expect("sounds.json должен разбираться");
-        assert_eq!(pack.title, "Гласные и согласные");
-        assert!(pack
-            .exercises
-            .iter()
-            .any(|e| e.stage() == ExerciseStage::Sound));
-        assert_eq!(
-            pack.exercises
+        with_temp_xdg_data_home(|_tmp| {
+            let pack = load_pack("sounds").expect("sounds.json должен разбираться");
+            assert_eq!(pack.title, "Гласные и согласные");
+            assert!(pack
+                .exercises
                 .iter()
-                .find(|e| e.stage() == ExerciseStage::Sound)
-                .and_then(|e| e.map_label())
-                .as_deref(),
-            Some("А")
-        );
+                .any(|e| e.stage() == ExerciseStage::Sound));
+            assert_eq!(
+                pack.exercises
+                    .iter()
+                    .find(|e| e.stage() == ExerciseStage::Sound)
+                    .and_then(|e| e.map_label())
+                    .as_deref(),
+                Some("А")
+            );
+        });
     }
 
     #[test]

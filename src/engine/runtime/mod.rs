@@ -146,6 +146,8 @@ pub struct Engine {
     model_download_rx: Option<Receiver<DownloadMsg>>,
     /// Отмена фонового скачивания (смена языка / новый старт).
     model_download_cancel: Option<Arc<AtomicBool>>,
+    /// Поток скачивания: join перед новым стартом, чтобы unpack не писал после cancel.
+    model_download_join: Option<std::thread::JoinHandle<()>>,
     model_download_note: Option<String>,
     pack_editor: Option<PackEditorState>,
     /// Кэш статуса ASR, если mutex занят listen'ом.
@@ -217,6 +219,7 @@ impl Engine {
             model_download: ModelDownloadState::default(),
             model_download_rx: None,
             model_download_cancel: None,
+            model_download_join: None,
             model_download_note: None,
             pack_editor: None,
             asr_status_cache,
@@ -242,10 +245,22 @@ impl Engine {
         if let Some(cancel) = &self.model_download_cancel {
             cancel.store(true, Ordering::Relaxed);
         }
-        self.model_download_cancel = None;
+        // JoinHandle оставляем: start_model_download дождётся конца unpack.
         self.model_download_rx = None;
         self.model_download = ModelDownloadState::Idle;
         self.model_download_note = None;
+    }
+
+    /// Дождаться завершения воркера скачивания (после cancel или перед новым стартом).
+    fn join_model_download_worker(&mut self) {
+        if let Some(cancel) = &self.model_download_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        if let Some(handle) = self.model_download_join.take() {
+            let _ = handle.join();
+        }
+        self.model_download_cancel = None;
+        self.model_download_rx = None;
     }
 
     fn set_language(&mut self, language: AppLanguage) {
@@ -256,6 +271,7 @@ impl Engine {
         self.session = None;
         // Остановить поток прошлой модели: иначе tmp/модель дерутся со сменой языка.
         self.cancel_model_download();
+        self.join_model_download_worker();
         self.progress.set_language(language);
         let fallback = language.default_pack_id();
         let current = self.pack_id().to_string();
@@ -277,6 +293,8 @@ impl Engine {
         if self.model_download_rx.is_some() {
             return;
         }
+        // Предыдущий cancel мог оставить живой unpack — не стартуем параллельно.
+        self.join_model_download_worker();
         if matches!(self.asr_status(), AsrStatus::Disabled) {
             return;
         }
@@ -304,7 +322,7 @@ impl Engine {
             percent: None,
         };
         self.model_download_note = None;
-        spawn_model_download(dest, language, tx, cancel);
+        self.model_download_join = Some(spawn_model_download(dest, language, tx, cancel));
     }
 
     fn poll_model_download(&mut self, tick: &mut TickResult) {
@@ -339,6 +357,9 @@ impl Engine {
                 DownloadMsg::Done => {
                     self.model_download_rx = None;
                     self.model_download_cancel = None;
+                    if let Some(handle) = self.model_download_join.take() {
+                        let _ = handle.join();
+                    }
                     self.reload_recognizer();
                     match self.asr_status() {
                         AsrStatus::Ready => {
@@ -372,6 +393,9 @@ impl Engine {
                 DownloadMsg::Err(e) => {
                     self.model_download_rx = None;
                     self.model_download_cancel = None;
+                    if let Some(handle) = self.model_download_join.take() {
+                        let _ = handle.join();
+                    }
                     self.model_download = ModelDownloadState::Failed(e);
                     tick.want_repaint = true;
                 }

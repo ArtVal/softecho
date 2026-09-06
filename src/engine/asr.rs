@@ -286,7 +286,11 @@ mod vosk_impl {
             buf.extend_from_slice(&down);
             while buf.len() >= FRAME_SAMPLES {
                 let frame: Vec<i16> = buf.drain(..FRAME_SAMPLES).collect();
-                self.pipe.send_frame(frame);
+                if !self.pipe.send_frame(frame) {
+                    // Очередь полна — дальше не копить pending (иначе лавина после resume).
+                    buf.clear();
+                    break;
+                }
             }
         }
     }
@@ -381,6 +385,7 @@ mod vosk_impl {
         let mut last_partial = String::new();
         let mut catching_up = false;
         let mut capture: Vec<i16> = Vec::with_capacity(TARGET_HZ as usize * 4);
+        let mut last_dropped = pipe.dropped_full_count();
 
         // Закрыть фразу. prefer_result — после DecodingState::Finalized (result()).
         // Иначе — final_result() по тишине/Стоп. Запасной путь — last_partial.
@@ -434,6 +439,16 @@ mod vosk_impl {
                 catching_up = true;
                 pipe.set_pause(true);
                 let _ = events.send(ListenEvent::PleaseWait);
+            }
+            // Кадры отброшены из‑за полной очереди — тот же вход в catch-up (без спама PleaseWait).
+            let dropped = pipe.dropped_full_count();
+            if dropped > last_dropped {
+                last_dropped = dropped;
+                if !catching_up {
+                    catching_up = true;
+                    pipe.set_pause(true);
+                    let _ = events.send(ListenEvent::PleaseWait);
+                }
             }
 
             let samples = if catching_up {

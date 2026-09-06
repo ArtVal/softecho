@@ -25,12 +25,12 @@ pub fn spawn_model_download(
     language: AppLanguage,
     tx: Sender<DownloadMsg>,
     cancel: Arc<AtomicBool>,
-) {
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         if let Err(e) = download_model(&dest_parent, language, &tx, &cancel) {
             let _ = tx.send(DownloadMsg::Err(e));
         }
-    });
+    })
 }
 
 fn download_model(
@@ -124,7 +124,11 @@ fn download_model_inner(
         return Err(tr(language, "err_download_cancel").into());
     }
 
-    extract_zip(tmp_zip, language, dest_parent)?;
+    extract_zip(tmp_zip, language, dest_parent, cancel)?;
+
+    if cancel.load(Ordering::Relaxed) {
+        return Err(tr(language, "err_download_cancel").into());
+    }
 
     let model_name = language.vosk_model_dir_name();
     let model_path = dest_parent.join(model_name);
@@ -136,7 +140,12 @@ fn download_model_inner(
     Ok(())
 }
 
-fn extract_zip(zip_path: &Path, language: AppLanguage, dest_parent: &Path) -> Result<(), String> {
+fn extract_zip(
+    zip_path: &Path,
+    language: AppLanguage,
+    dest_parent: &Path,
+    cancel: &AtomicBool,
+) -> Result<(), String> {
     let model_name = language.vosk_model_dir_name();
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -153,6 +162,10 @@ fn extract_zip(zip_path: &Path, language: AppLanguage, dest_parent: &Path) -> Re
 
     let mut wrote_any = false;
     for i in 0..archive.len() {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(tr(language, "err_download_cancel").into());
+        }
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
         let Some(relative) = entry.enclosed_name().map(|p| p.to_owned()) else {
             continue;
@@ -189,6 +202,11 @@ fn extract_zip(zip_path: &Path, language: AppLanguage, dest_parent: &Path) -> Re
         }
     }
 
+    if cancel.load(Ordering::Relaxed) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(tr(language, "err_download_cancel").into());
+    }
+
     if !wrote_any {
         let _ = fs::remove_dir_all(&staging);
         return Err(format!("{} {model_name}", tr(language, "err_zip_missing")));
@@ -201,6 +219,13 @@ fn extract_zip(zip_path: &Path, language: AppLanguage, dest_parent: &Path) -> Re
             let _ = fs::remove_dir_all(&staging);
             format!("{}: {e}", tr(language, "err_clear_dir"))
         })?;
+    }
+    if cancel.load(Ordering::Relaxed) {
+        let _ = fs::remove_dir_all(&staging);
+        if backup.is_dir() {
+            let _ = fs::rename(&backup, &final_path);
+        }
+        return Err(tr(language, "err_download_cancel").into());
     }
     if let Err(e) = fs::rename(&staging, &final_path) {
         let _ = fs::remove_dir_all(&staging);
@@ -240,7 +265,8 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let zip_path = dir.join("test.zip");
         write_test_zip(&zip_path, model_name);
-        extract_zip(&zip_path, AppLanguage::Ru, &dir).unwrap();
+        let cancel = AtomicBool::new(false);
+        extract_zip(&zip_path, AppLanguage::Ru, &dir, &cancel).unwrap();
         assert!(dir.join(model_name).join("README").is_file());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -260,10 +286,33 @@ mod tests {
         zip.start_file("progress.json", options).unwrap();
         zip.write_all(b"{}").unwrap();
         zip.finish().unwrap();
-        assert!(extract_zip(&zip_path, AppLanguage::En, &dir).is_err());
+        let cancel = AtomicBool::new(false);
+        assert!(extract_zip(&zip_path, AppLanguage::En, &dir, &cancel).is_err());
         assert!(!dir.join(model_name).exists());
         assert!(!dir.join("other.txt").exists());
         assert!(!dir.join("progress.json").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_zip_stops_on_cancel_before_promote() {
+        let model_name = AppLanguage::Ru.vosk_model_dir_name();
+        let dir = std::env::temp_dir().join(format!(
+            "softecho-zip-cancel-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("test.zip");
+        write_test_zip(&zip_path, model_name);
+        let cancel = AtomicBool::new(true);
+        let err = extract_zip(&zip_path, AppLanguage::Ru, &dir, &cancel).unwrap_err();
+        assert!(err.contains("отменен") || err.contains("cancelled"));
+        assert!(!dir.join(model_name).exists());
         let _ = fs::remove_dir_all(&dir);
     }
 }
