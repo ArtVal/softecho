@@ -969,6 +969,22 @@ fn abort_drain_exercise_done_err_sets_listen_error() {
 }
 
 #[test]
+fn play_last_clip_while_busy_sets_pending_replay() {
+    let mut eng = Engine::new_logic_only();
+    eng.test_set_last_clip(vec![1, 2, 3, 4]);
+    eng.test_set_playback_busy(true);
+    assert!(eng.test_playback_busy());
+    assert!(!eng.test_playback_pending_replay());
+
+    eng.handle(Command::PlayLastClip);
+
+    assert!(
+        eng.test_playback_pending_replay(),
+        "при busy PlayLastClip должен поставить pending_replay"
+    );
+}
+
+#[test]
 fn pending_recognizer_reload_waits_for_join() {
     let mut eng = Engine::new_logic_only();
     eng.test_set_pending_recognizer_reload(false);

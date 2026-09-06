@@ -805,32 +805,42 @@ impl Engine {
         tick
     }
 
+    /// Единый выход на Home (GoHome и Leave*): flush listen, экранные подчистки, сброс сессии.
+    fn leave_to_home(&mut self) {
+        if matches!(self.screen, Screen::PackEditor) {
+            self.leave_pack_editor(false);
+            if matches!(self.screen, Screen::PackEditor) {
+                return;
+            }
+        }
+        // Сначала flush listen (PCM/хвост), потом очистка диктофона.
+        self.abort_listen();
+        if matches!(self.screen, Screen::Dictaphone) {
+            self.clear_dictaphone_buffer();
+        }
+        if matches!(self.screen, Screen::Settings) {
+            if !matches!(self.model_download, ModelDownloadState::Working { .. }) {
+                self.model_download = ModelDownloadState::Idle;
+            }
+            self.model_download_note = None;
+        }
+        self.session = None;
+        self.pack_editor = None;
+        self.report_export_note = None;
+        self.screen = Screen::Home;
+    }
+
     pub fn handle(&mut self, cmd: Command) {
         match cmd {
-            Command::GoHome => {
-                // Единый выход «В меню»: то же подчищение, что у Leave* с отдельных экранов.
-                if matches!(self.screen, Screen::PackEditor) {
-                    self.leave_pack_editor(false);
-                    if matches!(self.screen, Screen::PackEditor) {
-                        return;
-                    }
-                }
-                // Сначала flush listen (PCM/хвост), потом очистка диктофона.
-                self.abort_listen();
-                if matches!(self.screen, Screen::Dictaphone) {
-                    self.clear_dictaphone_buffer();
-                }
-                if matches!(self.screen, Screen::Settings) {
-                    if !matches!(self.model_download, ModelDownloadState::Working { .. }) {
-                        self.model_download = ModelDownloadState::Idle;
-                    }
-                    self.model_download_note = None;
-                }
-                self.session = None;
-                self.pack_editor = None;
-                self.report_export_note = None;
-                self.screen = Screen::Home;
-            }
+            Command::GoHome
+            | Command::LeavePackPick
+            | Command::LeaveLevelPick
+            | Command::LeaveSpeechMap
+            | Command::LeaveProgress
+            | Command::LeavePackEditor
+            | Command::LeaveWarmup
+            | Command::LeaveSettings
+            | Command::LeaveDictaphone => self.leave_to_home(),
             Command::StartSession => {
                 self.abort_listen();
                 self.start_session();
@@ -844,9 +854,6 @@ impl Engine {
                 self.session = None;
                 self.screen = Screen::PackPick;
             }
-            Command::LeavePackPick => {
-                self.screen = Screen::Home;
-            }
             Command::SetPack(id) => {
                 self.abort_listen();
                 self.set_pack(&id);
@@ -856,16 +863,10 @@ impl Engine {
                 self.session = None;
                 self.screen = Screen::LevelPick;
             }
-            Command::LeaveLevelPick => {
-                self.screen = Screen::Home;
-            }
             Command::OpenSpeechMap => {
                 self.abort_listen();
                 self.session = None;
                 self.screen = Screen::SpeechMap;
-            }
-            Command::LeaveSpeechMap => {
-                self.screen = Screen::Home;
             }
             Command::OpenProgress => {
                 self.abort_listen();
@@ -873,12 +874,7 @@ impl Engine {
                 self.report_export_note = None;
                 self.screen = Screen::ProgressReport;
             }
-            Command::LeaveProgress => {
-                self.report_export_note = None;
-                self.screen = Screen::Home;
-            }
             Command::OpenPackEditor => self.open_pack_editor(),
-            Command::LeavePackEditor => self.leave_pack_editor(false),
             Command::DiscardPackEditor => self.leave_pack_editor(true),
             Command::ClonePackForEdit => self.clone_pack_for_edit(),
             Command::EditorDisable(i) => self.editor_disable(i),
@@ -893,9 +889,6 @@ impl Engine {
                 self.abort_listen();
                 self.session = None;
                 self.screen = Screen::Warmup;
-            }
-            Command::LeaveWarmup => {
-                self.screen = Screen::Home;
             }
             Command::SetLevel(level) => {
                 self.abort_listen();
@@ -917,13 +910,6 @@ impl Engine {
                 self.session = None;
                 self.screen = Screen::Settings;
             }
-            Command::LeaveSettings => {
-                self.screen = Screen::Home;
-                if !matches!(self.model_download, ModelDownloadState::Working { .. }) {
-                    self.model_download = ModelDownloadState::Idle;
-                }
-                self.model_download_note = None;
-            }
             Command::StartModelDownload => self.start_model_download(),
             Command::AgainSession => {
                 self.abort_listen();
@@ -940,11 +926,6 @@ impl Engine {
             Command::StopDictaphone => self.stop_dictaphone(),
             Command::ClearDictaphone => self.clear_dictaphone_buffer(),
             Command::SaveDictaphone => self.save_dictaphone_now(),
-            Command::LeaveDictaphone => {
-                self.abort_listen();
-                self.clear_dictaphone_buffer();
-                self.screen = Screen::Home;
-            }
             Command::PickPoolWord(i) => {
                 if let Some(session) = self.session.as_mut() {
                     if i < session.pool.len() {
@@ -1225,6 +1206,26 @@ impl Engine {
     #[cfg(test)]
     fn test_abort_listen(&mut self) {
         self.abort_listen();
+    }
+
+    #[cfg(test)]
+    fn test_set_last_clip(&mut self, pcm: Vec<i16>) {
+        self.last_clip = pcm;
+    }
+
+    #[cfg(test)]
+    fn test_set_playback_busy(&self, busy: bool) {
+        self.playback_busy.store(busy, Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    fn test_playback_busy(&self) -> bool {
+        self.playback_busy.load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    fn test_playback_pending_replay(&self) -> bool {
+        self.playback_pending_replay
     }
 }
 

@@ -79,6 +79,8 @@ impl AudioPipe {
         self.q.lock().ok()?.pop_front()
     }
 
+    /// Ждёт кадр с таймаутом (ASR consumer). Без feature `asr` метод не вызывается.
+    #[cfg_attr(not(feature = "asr"), allow(dead_code))]
     pub fn recv_timeout(&self, timeout: Duration) -> Option<Vec<i16>> {
         let deadline = Instant::now() + timeout;
         loop {

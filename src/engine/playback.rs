@@ -21,9 +21,10 @@ pub fn play_pcm_16k(
     busy: Arc<AtomicBool>,
     last_error: Arc<Mutex<Option<String>>>,
 ) {
+    // busy до spawn: PlayLastClip в том же тике видит занятость и ставит pending_replay.
+    busy.store(true, Ordering::Relaxed);
     thread::spawn(move || {
-        busy.store(true, Ordering::Relaxed);
-        if let Err(e) = play_blocking(&samples, &stop) {
+        if let Err(e) = play_blocking(&samples, &stop, &last_error) {
             if let Ok(mut g) = last_error.lock() {
                 *g = Some(e);
             }
@@ -33,23 +34,31 @@ pub fn play_pcm_16k(
     });
 }
 
-fn play_blocking(samples: &[i16], stop: &Arc<AtomicBool>) -> Result<(), String> {
+fn play_blocking(
+    samples: &[i16],
+    stop: &Arc<AtomicBool>,
+    last_error: &Arc<Mutex<Option<String>>>,
+) -> Result<(), String> {
     if samples.is_empty() {
         return Ok(());
     }
     #[cfg(feature = "asr")]
     {
-        cpal_play(samples, stop)
+        cpal_play(samples, stop, last_error)
     }
     #[cfg(not(feature = "asr"))]
     {
-        let _ = (samples, stop);
+        let _ = (samples, stop, last_error);
         Err("Воспроизведение недоступно без ASR".into())
     }
 }
 
 #[cfg(feature = "asr")]
-fn cpal_play(samples: &[i16], stop: &Arc<AtomicBool>) -> Result<(), String> {
+fn cpal_play(
+    samples: &[i16],
+    stop: &Arc<AtomicBool>,
+    last_error: &Arc<Mutex<Option<String>>>,
+) -> Result<(), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::Mutex;
 
@@ -66,7 +75,13 @@ fn cpal_play(samples: &[i16], stop: &Arc<AtomicBool>) -> Result<(), String> {
     let pcm = Arc::new(resample_i16_to_f32(samples, PLAYBACK_HZ, out_hz));
     let cursor = Arc::new(Mutex::new(0usize));
     let done = Arc::new(AtomicBool::new(false));
-    let err_fn = |err| eprintln!("Ошибка воспроизведения: {err}");
+    let last_error = Arc::clone(last_error);
+    let err_fn = move |err| {
+        eprintln!("Ошибка воспроизведения: {err}");
+        if let Ok(mut g) = last_error.lock() {
+            *g = Some(format!("Ошибка воспроизведения: {err}"));
+        }
+    };
 
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => {
