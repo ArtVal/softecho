@@ -2,20 +2,22 @@
 //! UI / будущий клиент общаются только через Command + геттеры + tick.
 
 mod pack_editor;
+mod listen;
 
 pub use pack_editor::PackEditorState;
 
+use listen::ListenPurpose;
+
 use super::asr::{
-    create_recognizer, AsrStatus, ListenConfig, ListenEvent, SpeechRecognizer,
+    create_recognizer, AsrStatus, ListenEvent, SpeechRecognizer,
 };
 use super::data::{
-    append_dictaphone_text, list_packs_for, load_active_pack, load_pack, load_progress,
-    new_dictaphone_path, new_report_path, pack_matches_language, save_dictaphone_text,
-    save_progress, save_report_text, user_data_dir, vosk_model_dir, DEFAULT_PACK_ID,
-    PackCatalogEntry,
+    list_packs_for, load_active_pack, load_pack, load_progress, new_report_path,
+    pack_matches_language, save_progress, save_report_text, user_data_dir, vosk_model_dir,
+    DEFAULT_PACK_ID, PackCatalogEntry,
 };
 use super::exercise::{
-    build_diagnosis_set, check_answer, infer_level, order_session_for_level_with_map, speech_matches,
+    build_diagnosis_set, check_answer, infer_level, order_session_for_level_with_map,
     twister_unlocked, pack_speech_entries, CheckResult, Exercise, ExercisePack, ExerciseStage,
     Progress, SpeechMapEntry, UserAnswer,
 };
@@ -33,11 +35,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ListenPurpose {
-    Exercise,
-    Dictaphone,
-}
 
 pub struct DictaphoneState {
     pub listening: bool,
@@ -123,6 +120,8 @@ pub struct Engine {
     recognizer: Arc<Mutex<Box<dyn SpeechRecognizer>>>,
     /// Фоновый поток распознавания (частичный текст + финал).
     listen_rx: Option<Receiver<ListenEvent>>,
+    /// JoinHandle listen-воркера: не стартовать второй, пока старый жив (после abort без join).
+    listen_join: Option<thread::JoinHandle<()>>,
     listen_target: Option<String>,
     listen_purpose: Option<ListenPurpose>,
     /// Живой partial текущей записи (ASR пишет сюда, UI читает).
@@ -154,6 +153,8 @@ pub struct Engine {
     asr_status_cache: AsrStatus,
     /// Результат последнего экспорта отчёта (путь или ошибка).
     report_export_note: Option<String>,
+    /// abort_listen оставил живой listen-воркер — reload mutex отложен до tick.
+    pending_recognizer_reload: bool,
 }
 
 impl Engine {
@@ -204,6 +205,7 @@ impl Engine {
             save_error: None,
             recognizer,
             listen_rx: None,
+            listen_join: None,
             listen_target: None,
             listen_purpose: None,
             listen_live: Arc::new(Mutex::new(String::new())),
@@ -224,6 +226,7 @@ impl Engine {
             pack_editor: None,
             asr_status_cache,
             report_export_note: None,
+            pending_recognizer_reload: false,
         }
     }
 
@@ -235,10 +238,21 @@ impl Engine {
 
     fn reload_recognizer(&mut self) {
         self.abort_listen();
+        if self.listen_worker_busy() {
+            // Воркер ещё держит Mutex — не блокируемся; доделаем в tick.
+            self.pending_recognizer_reload = true;
+            return;
+        }
+        self.apply_recognizer_reload();
+    }
+
+    fn apply_recognizer_reload(&mut self) {
+        self.reap_finished_listen_worker();
         let model = vosk_model_dir(self.progress.language);
         let mut r = self.recognizer.lock().unwrap_or_else(|e| e.into_inner());
         *r = create_recognizer(model.as_deref());
         self.asr_status_cache = r.status();
+        self.pending_recognizer_reload = false;
     }
 
     fn cancel_model_download(&mut self) {
@@ -705,121 +719,6 @@ impl Engine {
         session.exercises.insert(insert_at, ex);
     }
 
-    fn try_listen(&mut self) {
-        if self.listen_rx.is_some() {
-            return;
-        }
-        self.stop_playback();
-        self.last_clip.clear();
-
-        let target = self
-            .current_exercise()
-            .and_then(|e| e.target_text())
-            .map(|s| s.to_string());
-        let Some(target) = target else {
-            return;
-        };
-
-        let mut grammar: Vec<String> = Vec::new();
-        for w in target.split_whitespace() {
-            let w = w.to_lowercase();
-            if !grammar.iter().any(|g| g == &w) {
-                grammar.push(w);
-            }
-        }
-
-        if let Some(session) = self.session.as_mut() {
-            session.listening = true;
-            session.listen_error = None;
-            session.live_text.clear();
-            session.asr_hint_ok = None;
-        }
-
-        let stop = Arc::new(AtomicBool::new(false));
-        self.exercise_listen_stop = Some(Arc::clone(&stop));
-
-        let live = Arc::clone(&self.listen_live);
-        if let Ok(mut g) = live.lock() {
-            g.clear();
-        }
-        self.please_wait = false;
-        self.spawn_listen(
-            grammar,
-            Some(target),
-            ListenPurpose::Exercise,
-            ListenConfig::single_utterance(live, Some(stop)),
-        );
-    }
-
-    fn stop_exercise_listen(&mut self) {
-        if let Some(stop) = &self.exercise_listen_stop {
-            stop.store(true, Ordering::Relaxed);
-        }
-    }
-
-    fn try_listen_dictaphone(&mut self) {
-        if self.listen_rx.is_some() {
-            return;
-        }
-        self.stop_playback();
-        let stop = Arc::new(AtomicBool::new(false));
-        self.dictaphone.listening = true;
-        self.dictaphone.error = None;
-        self.dictaphone.save_note = None;
-        self.dictaphone.live_text.clear();
-        self.please_wait = false;
-        if let Ok(mut g) = self.dictaphone.live_partial.lock() {
-            g.clear();
-        }
-        if let Ok(mut g) = self.listen_live.lock() {
-            g.clear();
-        }
-        // Файл сессии: новый, если ещё нет (после Очистить / первый старт).
-        if self.dictaphone.save_path.is_none() {
-            match new_dictaphone_path() {
-                Ok(path) => {
-                    self.dictaphone.save_note =
-                        Some(format!("Пишу в файл: {}", path.display()));
-                    self.dictaphone.save_path = Some(path);
-                }
-                Err(e) => {
-                    self.dictaphone.error = Some(e);
-                    self.dictaphone.listening = false;
-                    return;
-                }
-            }
-        }
-        // transcript не очищаем — можно дописать; Очистить сбрасывает всё.
-        self.dictaphone.stop = Some(Arc::clone(&stop));
-        let live = Arc::clone(&self.dictaphone.live_partial);
-        self.listen_live = Arc::clone(&live);
-        self.spawn_listen(
-            Vec::new(),
-            None,
-            ListenPurpose::Dictaphone,
-            ListenConfig::long_dictaphone(stop, live),
-        );
-    }
-
-    fn stop_dictaphone(&mut self) {
-        if let Some(stop) = &self.dictaphone.stop {
-            stop.store(true, Ordering::Relaxed);
-        }
-    }
-
-    fn clear_dictaphone_buffer(&mut self) {
-        self.stop_playback();
-        self.last_clip.clear();
-        self.dictaphone.live_text.clear();
-        self.dictaphone.transcript.clear();
-        self.dictaphone.error = None;
-        self.dictaphone.save_path = None;
-        self.dictaphone.save_note = None;
-        if let Ok(mut g) = self.dictaphone.live_partial.lock() {
-            g.clear();
-        }
-    }
-
     fn store_last_clip(&mut self, pcm: Vec<i16>) {
         if pcm.is_empty() {
             return;
@@ -872,155 +771,6 @@ impl Engine {
         self.playback_stop = None;
     }
 
-    fn save_dictaphone_now(&mut self) {
-        let text = self.dictaphone.transcript.clone();
-        if text.is_empty() {
-            self.dictaphone.save_note = Some("Нечего сохранять — текста ещё нет.".into());
-            return;
-        }
-        let path = match &self.dictaphone.save_path {
-            Some(p) => p.clone(),
-            None => match new_dictaphone_path() {
-                Ok(p) => {
-                    self.dictaphone.save_path = Some(p.clone());
-                    p
-                }
-                Err(e) => {
-                    self.dictaphone.error = Some(e);
-                    return;
-                }
-            },
-        };
-        match save_dictaphone_text(&path, &text) {
-            Ok(()) => {
-                self.dictaphone.save_note =
-                    Some(format!("Сохранено: {}", path.display()));
-                self.dictaphone.error = None;
-            }
-            Err(e) => self.dictaphone.error = Some(e),
-        }
-    }
-
-    fn append_dictaphone_phrase(&mut self, phrase: &str) {
-        if phrase.is_empty() {
-            return;
-        }
-        if !self.dictaphone.transcript.is_empty() {
-            self.dictaphone.transcript.push('\n');
-        }
-        self.dictaphone.transcript.push_str(phrase);
-        if let Some(path) = &self.dictaphone.save_path {
-            let chunk = if path
-                .metadata()
-                .map(|m| m.len() > 0)
-                .unwrap_or(false)
-            {
-                format!("\n{phrase}")
-            } else {
-                phrase.to_string()
-            };
-            if let Err(e) = append_dictaphone_text(path, &chunk) {
-                self.dictaphone.error = Some(e);
-            }
-        }
-    }
-
-    /// Хвост из live UI / listen_live, если Utterance не успел уйти в transcript.
-    fn dictaphone_live_tail(&self) -> String {
-        let from_ui = self.dictaphone.live_text.trim().to_string();
-        if !from_ui.is_empty() {
-            from_ui
-        } else {
-            self.listen_live
-                .lock()
-                .map(|g| g.trim().to_string())
-                .unwrap_or_default()
-        }
-    }
-
-    fn exercise_heard_text(&self, heard: &str) -> String {
-        let trimmed = heard.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-        let from_ui = self
-            .session()
-            .map(|s| s.live_text.trim().to_string())
-            .unwrap_or_default();
-        if !from_ui.is_empty() {
-            return from_ui;
-        }
-        self.listen_live
-            .lock()
-            .map(|g| g.trim().to_string())
-            .unwrap_or_default()
-    }
-
-    fn flush_dictaphone_live_tail(&mut self) {
-        let live_tail = self.dictaphone_live_tail();
-        if !live_tail.is_empty() {
-            let already = self
-                .dictaphone
-                .transcript
-                .lines()
-                .any(|l| l.trim() == live_tail);
-            if !already {
-                self.append_dictaphone_phrase(&live_tail);
-            }
-        }
-        self.dictaphone.live_text.clear();
-        if let Ok(mut g) = self.listen_live.lock() {
-            g.clear();
-        }
-        if let Ok(mut g) = self.dictaphone.live_partial.lock() {
-            g.clear();
-        }
-    }
-
-    fn spawn_listen(
-        &mut self,
-        grammar: Vec<String>,
-        target: Option<String>,
-        purpose: ListenPurpose,
-        config: ListenConfig,
-    ) {
-        let (tx, rx) = mpsc::channel();
-        let recognizer = Arc::clone(&self.recognizer);
-        self.listen_rx = Some(rx);
-        self.listen_target = target;
-        self.listen_purpose = Some(purpose);
-
-        thread::spawn(move || match recognizer.lock() {
-            Ok(mut r) => r.listen_stream(&grammar, tx, config),
-            Err(_) => {
-                let _ = tx.send(ListenEvent::Done(Err(
-                    "Распознаватель недоступен".into(),
-                )));
-            }
-        });
-    }
-
-    fn sync_live_text(&mut self) {
-        let Ok(g) = self.listen_live.try_lock() else {
-            return;
-        };
-        match self.listen_purpose {
-            Some(ListenPurpose::Dictaphone) => {
-                if self.dictaphone.live_text != *g {
-                    self.dictaphone.live_text.clone_from(&g);
-                }
-            }
-            Some(ListenPurpose::Exercise) => {
-                if let Some(session) = self.session.as_mut() {
-                    if session.live_text != *g {
-                        session.live_text.clone_from(&g);
-                    }
-                }
-            }
-            None => {}
-        }
-    }
-
     pub fn tick(&mut self) -> TickResult {
         let mut tick = TickResult::default();
         self.poll_model_download(&mut tick);
@@ -1042,191 +792,17 @@ impl Engine {
             tick.want_repaint = true;
             tick.repaint_after.get_or_insert(Duration::from_millis(100));
         }
-        if self.listen_rx.is_some() {
-            self.sync_live_text();
-        }
-
-        let Some(rx) = self.listen_rx.as_ref() else {
-            return tick;
-        };
-
-        let mut events = Vec::new();
-        loop {
-            match rx.try_recv() {
-                Ok(ev) => events.push(ev),
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    events.push(ListenEvent::Done(Err("Сбой записи голоса".into())));
-                    break;
-                }
+        if self.pending_recognizer_reload {
+            if !self.listen_worker_busy() {
+                self.apply_recognizer_reload();
+                tick.want_repaint = true;
+            } else {
+                tick.want_repaint = true;
+                tick.repaint_after.get_or_insert(Duration::from_millis(50));
             }
         }
-
-        if events.is_empty() {
-            if self.listen_rx.is_some() {
-                tick.repaint_after = Some(Duration::from_millis(50));
-            }
-            return tick;
-        }
-
-        tick.want_repaint = true;
-
-        for event in events {
-            match event {
-                ListenEvent::PleaseWait => {
-                    self.please_wait = true;
-                }
-                ListenEvent::ReadyAgain => {
-                    self.please_wait = false;
-                }
-                ListenEvent::Utterance(phrase) => {
-                    // Только диктофон (continuous). Иначе latent-запись в чужой transcript.
-                    if matches!(self.listen_purpose, Some(ListenPurpose::Dictaphone)) {
-                        self.append_dictaphone_phrase(&phrase);
-                        self.dictaphone.live_text.clear();
-                        if let Ok(mut g) = self.listen_live.lock() {
-                            g.clear();
-                        }
-                        if let Ok(mut g) = self.dictaphone.live_partial.lock() {
-                            g.clear();
-                        }
-                    }
-                }
-                ListenEvent::Done(outcome) => {
-                    self.listen_rx = None;
-                    self.exercise_listen_stop = None;
-                    self.please_wait = false;
-                    let target = self.listen_target.take().unwrap_or_default();
-                    let purpose = self.listen_purpose.take();
-
-                    match purpose {
-                        Some(ListenPurpose::Dictaphone) => {
-                            self.dictaphone.listening = false;
-                            self.dictaphone.stop = None;
-                            if !matches!(self.screen, Screen::Dictaphone) {
-                                continue;
-                            }
-                            match outcome {
-                                Ok(heard) => {
-                                    self.store_last_clip(heard.pcm);
-                                    self.flush_dictaphone_live_tail();
-                                    if self.dictaphone.transcript.is_empty()
-                                        && !heard.text.is_empty()
-                                    {
-                                        self.append_dictaphone_phrase(&heard.text);
-                                    }
-                                    if self.dictaphone.save_path.is_some()
-                                        && !self.dictaphone.transcript.is_empty()
-                                    {
-                                        self.save_dictaphone_now();
-                                    }
-                                }
-                                Err(e) => {
-                                    self.flush_dictaphone_live_tail();
-                                    if self.dictaphone.transcript.is_empty() {
-                                        self.dictaphone.error = Some(e);
-                                    } else {
-                                        self.save_dictaphone_now();
-                                    }
-                                }
-                            }
-                        }
-                        Some(ListenPurpose::Exercise) => {
-                            let still_on_exercise = matches!(self.screen, Screen::Exercise)
-                                && self.session.as_ref().is_some_and(|s| s.listening);
-                            if let Some(session) = self.session.as_mut() {
-                                session.listening = false;
-                            }
-                            if !still_on_exercise {
-                                continue;
-                            }
-                            match outcome {
-                                Ok(heard) => {
-                                    self.store_last_clip(heard.pcm);
-                                    let text = self.exercise_heard_text(&heard.text);
-                                    let matched = if text.is_empty() {
-                                        None
-                                    } else {
-                                        Some(speech_matches(&target, &text))
-                                    };
-                                    if let Some(session) = self.session.as_mut() {
-                                        session.live_text = text;
-                                        session.asr_hint_ok = matched;
-                                        session.listen_error = None;
-                                    }
-                                    // ASR — подсказка; зачёт только через «Получилось / Не получилось».
-                                }
-                                Err(e) => {
-                                    if let Some(session) = self.session.as_mut() {
-                                        session.listen_error = Some(e);
-                                        session.asr_hint_ok = None;
-                                    }
-                                }
-                            }
-                        }
-                        None => {}
-                    }
-                }
-            }
-        }
+        self.poll_listen_events(&mut tick);
         tick
-    }
-
-    fn abort_listen(&mut self) {
-        self.stop_playback();
-        if let Some(stop) = &self.exercise_listen_stop {
-            stop.store(true, Ordering::Relaxed);
-        }
-        if let Some(stop) = &self.dictaphone.stop {
-            stop.store(true, Ordering::Relaxed);
-        }
-        // Спасти уже пришедшие Done/Utterance до сброса канала.
-        if let Some(rx) = self.listen_rx.take() {
-            self.drain_listen_rx_on_abort(rx);
-        }
-        self.exercise_listen_stop = None;
-        self.listen_target = None;
-        self.listen_purpose = None;
-        self.please_wait = false;
-        self.dictaphone.stop = None;
-        self.dictaphone.listening = false;
-        if let Some(session) = self.session.as_mut() {
-            session.listening = false;
-        }
-    }
-
-    /// Неблокирующий drain: сохранить PCM / хвост диктофона из очереди.
-    fn drain_listen_rx_on_abort(&mut self, rx: Receiver<ListenEvent>) {
-        let purpose = self.listen_purpose;
-        while let Ok(ev) = rx.try_recv() {
-            match ev {
-                ListenEvent::Utterance(phrase)
-                    if matches!(purpose, Some(ListenPurpose::Dictaphone)) =>
-                {
-                    self.append_dictaphone_phrase(&phrase);
-                }
-                ListenEvent::Done(Ok(heard)) => {
-                    self.store_last_clip(heard.pcm);
-                    if matches!(purpose, Some(ListenPurpose::Dictaphone)) {
-                        self.flush_dictaphone_live_tail();
-                        if self.dictaphone.transcript.is_empty() && !heard.text.is_empty() {
-                            self.append_dictaphone_phrase(&heard.text);
-                        }
-                    } else if matches!(purpose, Some(ListenPurpose::Exercise)) {
-                        let text = self.exercise_heard_text(&heard.text);
-                        if let Some(session) = self.session.as_mut() {
-                            session.live_text = text;
-                        }
-                    }
-                }
-                ListenEvent::Done(Err(_)) => {
-                    if matches!(purpose, Some(ListenPurpose::Dictaphone)) {
-                        self.flush_dictaphone_live_tail();
-                    }
-                }
-                _ => {}
-            }
-        }
     }
 
     pub fn handle(&mut self, cmd: Command) {
@@ -1596,6 +1172,60 @@ impl Engine {
     pub(crate) fn test_download_rx(&mut self, rx: Receiver<DownloadMsg>) {
         self.model_download_rx = Some(rx);
     }
+
+    /// Подставить канал listen (без реального ASR-воркера).
+    #[cfg(test)]
+    fn test_inject_listen(
+        &mut self,
+        rx: Receiver<ListenEvent>,
+        purpose: ListenPurpose,
+        target: Option<String>,
+    ) {
+        self.listen_rx = Some(rx);
+        self.listen_purpose = Some(purpose);
+        self.listen_target = target;
+    }
+
+    /// Имитация «join ещё жив»: поток спит, пока `release` не станет true.
+    #[cfg(test)]
+    fn test_inject_busy_listen_join(&mut self, release: Arc<AtomicBool>) {
+        self.listen_join = Some(thread::spawn(move || {
+            while !release.load(Ordering::SeqCst) {
+                thread::sleep(Duration::from_millis(5));
+            }
+        }));
+    }
+
+    #[cfg(test)]
+    fn test_set_dictaphone_save(&mut self, path: PathBuf, transcript: String) {
+        self.dictaphone.save_path = Some(path);
+        self.dictaphone.transcript = transcript;
+    }
+
+    #[cfg(test)]
+    fn test_pending_recognizer_reload(&self) -> bool {
+        self.pending_recognizer_reload
+    }
+
+    #[cfg(test)]
+    fn test_set_pending_recognizer_reload(&mut self, pending: bool) {
+        self.pending_recognizer_reload = pending;
+    }
+
+    #[cfg(test)]
+    fn test_listen_worker_busy(&self) -> bool {
+        self.listen_worker_busy()
+    }
+
+    #[cfg(test)]
+    fn test_reload_recognizer(&mut self) {
+        self.reload_recognizer();
+    }
+
+    #[cfg(test)]
+    fn test_abort_listen(&mut self) {
+        self.abort_listen();
+    }
 }
 
 impl SessionState {
@@ -1622,896 +1252,4 @@ impl SessionState {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::engine::data::with_temp_xdg_data_home;
-    use crate::engine::protocol::{ModelDownloadState, Screen};
-
-    #[test]
-    fn set_pack_manual() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::SetPack("daily".into()));
-        assert_eq!(eng.pack().title, "Дом и быт");
-        assert_eq!(eng.pack_id(), "daily");
-        assert!(matches!(eng.screen(), Screen::Home));
-    }
-
-    #[test]
-    fn start_session_without_level_opens_picker() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = None;
-        eng.handle(Command::StartSession);
-        assert!(matches!(eng.screen(), Screen::LevelPick));
-        assert!(eng.session().is_none());
-    }
-
-    #[test]
-    fn start_session_opens_exercise() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Syllable);
-        assert!(matches!(eng.screen(), Screen::Home));
-        eng.handle(Command::StartSession);
-        assert!(matches!(eng.screen(), Screen::Exercise));
-        assert!(eng.session().is_some());
-        let s = eng.session().unwrap();
-        assert!(!s.exercises.is_empty());
-        assert_eq!(s.index, 0);
-        let stages: Vec<_> = s.exercises.iter().map(Exercise::stage).collect();
-        assert_eq!(stages.first(), Some(&crate::engine::ExerciseStage::Syllable));
-        let mut seen_word = false;
-        let mut seen_phrase = false;
-        let mut seen_twister = false;
-        for st in &stages {
-            match st {
-                crate::engine::ExerciseStage::Sound => {
-                    panic!("звук отфильтрован уровнем «слоги»");
-                }
-                crate::engine::ExerciseStage::Syllable => {
-                    assert!(!seen_word && !seen_phrase && !seen_twister);
-                }
-                crate::engine::ExerciseStage::Word => {
-                    seen_word = true;
-                    assert!(!seen_phrase && !seen_twister);
-                }
-                crate::engine::ExerciseStage::Phrase => {
-                    seen_phrase = true;
-                    assert!(!seen_twister);
-                }
-                crate::engine::ExerciseStage::Twister => seen_twister = true,
-            }
-        }
-        assert!(seen_word && seen_phrase);
-    }
-
-    #[test]
-    fn set_level_manual_and_filter_practice() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::SetLevel(ExerciseStage::Word));
-        assert_eq!(eng.level(), Some(ExerciseStage::Word));
-        assert!(matches!(eng.screen(), Screen::Home));
-        eng.handle(Command::StartSession);
-        let s = eng.session().unwrap();
-        assert!(s.exercises.iter().all(|e| e.stage() >= ExerciseStage::Word));
-        assert!(!s.exercises.iter().any(|e| e.stage() == ExerciseStage::Syllable));
-    }
-
-    #[test]
-    fn diagnosis_sets_level_automatically() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::StartDiagnosis);
-        assert!(eng.session_is_diagnosis());
-        assert!(matches!(eng.screen(), Screen::Exercise));
-        // Все ответы верные → уровень «Фразы».
-        loop {
-            let Some(ex) = eng.current_exercise().cloned() else {
-                break;
-            };
-            match ex {
-                Exercise::ChooseWord { answer, .. } => {
-                    eng.handle(Command::Submit(UserAnswer::Choice(answer)));
-                }
-                Exercise::BuildPhrase { answer, .. } => {
-                    let parts: Vec<_> = answer.split_whitespace().map(str::to_string).collect();
-                    eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
-                }
-                Exercise::ReadAloud { .. } => {
-                    eng.handle(Command::Submit(UserAnswer::ReadDone {
-                        matched: true,
-                        heard: None,
-                    }));
-                }
-            }
-            eng.handle(Command::AdvanceAfterFeedback);
-            if matches!(eng.screen(), Screen::DiagnosisResult { .. }) {
-                break;
-            }
-        }
-        assert!(matches!(
-            eng.screen(),
-            Screen::DiagnosisResult {
-                level: ExerciseStage::Phrase
-            }
-        ));
-        assert_eq!(eng.level(), Some(ExerciseStage::Phrase));
-        // Диагностика не считает обычное занятие.
-        assert_eq!(eng.progress().sessions_completed, 0);
-    }
-
-    #[test]
-    fn diagnosis_weak_syllables_sets_syllable_level() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::StartDiagnosis);
-        loop {
-            let Some(ex) = eng.current_exercise().cloned() else {
-                break;
-            };
-            let ok = ex.stage() != ExerciseStage::Syllable;
-            match ex {
-                Exercise::ChooseWord { answer, .. } => {
-                    if ok {
-                        eng.handle(Command::Submit(UserAnswer::Choice(answer)));
-                    } else {
-                        eng.handle(Command::Submit(UserAnswer::Choice("__нет__".into())));
-                    }
-                }
-                Exercise::BuildPhrase { answer, .. } => {
-                    let parts: Vec<_> = if ok {
-                        answer.split_whitespace().map(str::to_string).collect()
-                    } else {
-                        vec!["нет".into()]
-                    };
-                    eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
-                }
-                Exercise::ReadAloud { .. } => {
-                    eng.handle(Command::Submit(UserAnswer::ReadDone {
-                        matched: ok,
-                        heard: None,
-                    }));
-                }
-            }
-            eng.handle(Command::AdvanceAfterFeedback);
-            if matches!(eng.screen(), Screen::DiagnosisResult { .. }) {
-                break;
-            }
-        }
-        assert_eq!(eng.level(), Some(ExerciseStage::Syllable));
-    }
-
-    #[test]
-    fn diagnosis_weak_sounds_sets_sound_level() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::StartDiagnosis);
-        loop {
-            let Some(ex) = eng.current_exercise().cloned() else {
-                break;
-            };
-            let ok = ex.stage() != ExerciseStage::Sound;
-            match ex {
-                Exercise::ChooseWord { answer, .. } => {
-                    if ok {
-                        eng.handle(Command::Submit(UserAnswer::Choice(answer)));
-                    } else {
-                        eng.handle(Command::Submit(UserAnswer::Choice("__нет__".into())));
-                    }
-                }
-                Exercise::BuildPhrase { answer, .. } => {
-                    let parts: Vec<_> = if ok {
-                        answer.split_whitespace().map(str::to_string).collect()
-                    } else {
-                        vec!["нет".into()]
-                    };
-                    eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
-                }
-                Exercise::ReadAloud { .. } => {
-                    eng.handle(Command::Submit(UserAnswer::ReadDone {
-                        matched: ok,
-                        heard: None,
-                    }));
-                }
-            }
-            eng.handle(Command::AdvanceAfterFeedback);
-            if matches!(eng.screen(), Screen::DiagnosisResult { .. }) {
-                break;
-            }
-        }
-        assert_eq!(eng.level(), Some(ExerciseStage::Sound));
-    }
-
-    #[test]
-    fn choose_word_flow_to_feedback() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Syllable);
-        eng.handle(Command::StartSession);
-        // Дойти до ChooseWord, если первый другой — листаем через неверный ответ нельзя без feedback.
-        // Берём упражнение из сессии и сабмитим подходящий тип.
-        let ex = eng.current_exercise().cloned().unwrap();
-        match ex {
-            Exercise::ChooseWord { answer, .. } => {
-                eng.handle(Command::Submit(UserAnswer::Choice(answer)));
-            }
-            Exercise::BuildPhrase { answer, .. } => {
-                let parts: Vec<String> = answer.split_whitespace().map(str::to_string).collect();
-                eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
-            }
-            Exercise::ReadAloud { .. } => {
-                eng.handle(Command::Submit(UserAnswer::ReadDone {
-                    matched: true,
-                    heard: None,
-                }));
-            }
-        }
-        assert!(matches!(eng.screen(), Screen::Feedback { .. }));
-        eng.handle(Command::AdvanceAfterFeedback);
-        // Либо следующее упражнение, либо результат (если одно).
-        assert!(matches!(
-            eng.screen(),
-            Screen::Exercise | Screen::Result { .. }
-        ));
-    }
-
-    #[test]
-    fn pick_pool_word_and_undo() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Syllable);
-        eng.handle(Command::StartSession);
-        // Найти BuildPhrase
-        let mut found = false;
-        for _ in 0..eng.session().unwrap().exercises.len() {
-            if matches!(eng.current_exercise(), Some(Exercise::BuildPhrase { .. })) {
-                found = true;
-                break;
-            }
-            // форсируем переход: сдаём текущее
-            let ex = eng.current_exercise().cloned().unwrap();
-            match ex {
-                Exercise::ChooseWord { answer, .. } => {
-                    eng.handle(Command::Submit(UserAnswer::Choice(answer)));
-                }
-                Exercise::BuildPhrase { answer, .. } => {
-                    let parts: Vec<_> = answer.split_whitespace().map(str::to_string).collect();
-                    eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
-                }
-                Exercise::ReadAloud { .. } => {
-                    eng.handle(Command::Submit(UserAnswer::ReadDone {
-                        matched: true,
-                        heard: None,
-                    }));
-                }
-            }
-            eng.handle(Command::AdvanceAfterFeedback);
-            if matches!(eng.screen(), Screen::Result { .. }) {
-                break;
-            }
-        }
-        if !found {
-            return; // набор без BuildPhrase — пропускаем
-        }
-        let pool_len = eng.session().unwrap().pool.len();
-        assert!(pool_len > 0);
-        eng.handle(Command::PickPoolWord(0));
-        assert_eq!(eng.session().unwrap().pool.len(), pool_len - 1);
-        assert_eq!(eng.session().unwrap().picked.len(), 1);
-        eng.handle(Command::UndoPickedWord);
-        assert_eq!(eng.session().unwrap().picked.len(), 0);
-        assert_eq!(eng.session().unwrap().pool.len(), pool_len);
-    }
-
-    #[test]
-    fn go_home_clears_session() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Syllable);
-        eng.handle(Command::StartSession);
-        eng.handle(Command::GoHome);
-        assert!(matches!(eng.screen(), Screen::Home));
-        assert!(eng.session().is_none());
-        assert!(!eng.please_wait());
-    }
-
-    #[test]
-    fn open_speech_map_and_leave() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::OpenSpeechMap);
-        assert!(matches!(eng.screen(), Screen::SpeechMap));
-        assert!(!eng.speech_map_entries().is_empty());
-        eng.handle(Command::LeaveSpeechMap);
-        assert!(matches!(eng.screen(), Screen::Home));
-    }
-
-    #[test]
-    fn open_warmup_and_leave() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::OpenWarmup);
-        assert!(matches!(eng.screen(), Screen::Warmup));
-        eng.handle(Command::LeaveWarmup);
-        assert!(matches!(eng.screen(), Screen::Home));
-    }
-
-    #[test]
-    fn open_progress_and_leave() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::OpenProgress);
-        assert!(matches!(eng.screen(), Screen::ProgressReport));
-        let text = eng.progress_report_text();
-        assert!(text.contains("SoftEcho"));
-        eng.handle(Command::LeaveProgress);
-        assert!(matches!(eng.screen(), Screen::Home));
-    }
-
-    #[test]
-    fn export_progress_report_writes_file() {
-        with_temp_xdg_data_home(|_tmp| {
-            let mut eng = Engine::new_logic_only();
-            eng.handle(Command::ExportProgressReport);
-            let note = eng.report_export_note().expect("note").to_string();
-            assert!(
-                note.contains("Отчёт сохранён") || note.contains("Report saved"),
-                "{note}"
-            );
-            assert!(
-                note.contains("softecho-report_") && note.contains(".txt"),
-                "{note}"
-            );
-            let path = note.split(": ").nth(1).expect("path after colon");
-            let body = std::fs::read_to_string(path).expect("report file");
-            assert!(body.contains("SoftEcho"));
-        });
-    }
-
-    #[test]
-    fn open_pack_editor_builtin_prompts_clone() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::OpenPackEditor);
-        assert!(matches!(eng.screen(), Screen::PackEditor));
-        assert!(eng.pack_editor().is_none());
-        eng.handle(Command::LeavePackEditor);
-        assert!(matches!(eng.screen(), Screen::Home));
-    }
-
-    #[test]
-    fn pack_editor_dirty_blocks_leave_until_discard() {
-        with_temp_xdg_data_home(|_tmp| {
-            let mut eng = Engine::new_logic_only();
-            eng.handle(Command::ClonePackForEdit);
-            assert!(
-                eng.pack_editor().is_some(),
-                "clone failed: {:?}",
-                eng.load_error()
-            );
-            eng.handle(Command::EditorDisable(0));
-            assert!(eng.pack_editor().unwrap().dirty);
-            eng.handle(Command::LeavePackEditor);
-            assert!(matches!(eng.screen(), Screen::PackEditor));
-            assert!(eng.pack_editor().unwrap().error.is_some());
-            eng.handle(Command::DiscardPackEditor);
-            assert!(matches!(eng.screen(), Screen::Home));
-            assert!(eng.pack_editor().is_none());
-        });
-    }
-
-    fn tiny_test_pack() -> ExercisePack {
-        ExercisePack {
-            title: "test".into(),
-            exercises: vec![
-                Exercise::ChooseWord {
-                    stage: Some(ExerciseStage::Word),
-                    prompt: "q".into(),
-                    options: vec!["дом".into(), "чай".into()],
-                    answer: "дом".into(),
-                    image: None,
-                },
-                Exercise::ChooseWord {
-                    stage: Some(ExerciseStage::Word),
-                    prompt: "q2".into(),
-                    options: vec!["чай".into(), "стол".into()],
-                    answer: "чай".into(),
-                    image: None,
-                },
-            ],
-        }
-    }
-
-    fn wrong_answer_for(ex: &Exercise) -> UserAnswer {
-        match ex {
-            Exercise::ChooseWord { options, answer, .. } => {
-                let wrong = options
-                    .iter()
-                    .find(|o| *o != answer)
-                    .cloned()
-                    .unwrap_or_else(|| "__нет__".into());
-                UserAnswer::Choice(wrong)
-            }
-            Exercise::BuildPhrase { answer, .. } => {
-                let mut parts: Vec<String> = answer.split_whitespace().map(str::to_string).collect();
-                if parts.len() >= 2 {
-                    parts.swap(0, 1);
-                }
-                UserAnswer::Phrase(parts)
-            }
-            Exercise::ReadAloud { .. } => UserAnswer::ReadDone {
-                matched: false,
-                heard: None,
-            },
-        }
-    }
-
-    #[test]
-    fn incorrect_practice_requeues_on_advance() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Word);
-        eng.pack = tiny_test_pack();
-        eng.handle(Command::StartSession);
-        let len = eng.session().unwrap().exercises.len();
-        let ex = eng.current_exercise().cloned().unwrap();
-        eng.handle(Command::Submit(wrong_answer_for(&ex)));
-        eng.handle(Command::AdvanceAfterFeedback);
-        assert_eq!(eng.session().unwrap().exercises.len(), len + 1);
-        assert!(matches!(eng.screen(), Screen::Exercise));
-    }
-
-    #[test]
-    fn skip_repeat_does_not_requeue() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Word);
-        eng.pack = tiny_test_pack();
-        eng.handle(Command::StartSession);
-        let len = eng.session().unwrap().exercises.len();
-        let ex = eng.current_exercise().cloned().unwrap();
-        eng.handle(Command::Submit(wrong_answer_for(&ex)));
-        eng.handle(Command::SkipRepeatAndAdvance);
-        assert_eq!(eng.session().unwrap().exercises.len(), len);
-    }
-
-    #[test]
-    fn requeue_capped_per_key() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Word);
-        eng.pack = ExercisePack {
-            title: "one".into(),
-            exercises: vec![Exercise::ChooseWord {
-                stage: Some(ExerciseStage::Word),
-                prompt: "q".into(),
-                options: vec!["дом".into(), "чай".into()],
-                answer: "дом".into(),
-                image: None,
-            }],
-        };
-        eng.handle(Command::StartSession);
-        let mut max_len = 1;
-        for _ in 0..6 {
-            if !matches!(eng.screen(), Screen::Exercise) {
-                break;
-            }
-            let ex = eng.current_exercise().cloned().unwrap();
-            eng.handle(Command::Submit(wrong_answer_for(&ex)));
-            eng.handle(Command::AdvanceAfterFeedback);
-            if let Some(s) = eng.session() {
-                max_len = max_len.max(s.exercises.len());
-            }
-        }
-        assert_eq!(max_len, 4);
-    }
-
-    #[test]
-    fn skip_repeat_blocks_later_requeue_same_key() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Word);
-        eng.pack = ExercisePack {
-            title: "same-key".into(),
-            exercises: vec![
-                Exercise::ChooseWord {
-                    stage: Some(ExerciseStage::Word),
-                    prompt: "q1".into(),
-                    options: vec!["дом".into(), "чай".into()],
-                    answer: "дом".into(),
-                    image: None,
-                },
-                Exercise::ChooseWord {
-                    stage: Some(ExerciseStage::Word),
-                    prompt: "q2".into(),
-                    options: vec!["дом".into(), "стол".into()],
-                    answer: "дом".into(),
-                    image: None,
-                },
-            ],
-        };
-        eng.handle(Command::StartSession);
-        let len = eng.session().unwrap().exercises.len();
-        let ex = eng.current_exercise().cloned().unwrap();
-        eng.handle(Command::Submit(wrong_answer_for(&ex)));
-        eng.handle(Command::SkipRepeatAndAdvance);
-        assert_eq!(eng.session().unwrap().exercises.len(), len);
-        assert!(matches!(eng.screen(), Screen::Exercise));
-        let ex2 = eng.current_exercise().cloned().unwrap();
-        eng.handle(Command::Submit(wrong_answer_for(&ex2)));
-        assert_eq!(eng.feedback_requeues_left(), Some(0));
-        let len_before = eng.session().unwrap().exercises.len();
-        eng.handle(Command::AdvanceAfterFeedback);
-        if let Some(s) = eng.session() {
-            assert_eq!(s.exercises.len(), len_before);
-        } else {
-            assert_eq!(len_before, len);
-            assert!(matches!(eng.screen(), Screen::Result { .. }));
-        }
-    }
-
-    #[test]
-    fn higher_session_boost_comes_earlier() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Word);
-        // «дом» слабее в карте — стартует первым (без случайного порядка).
-        eng.progress.speech_map.record("дом", false);
-        eng.progress.speech_map.record("дом", false);
-        eng.pack = ExercisePack {
-            title: "two".into(),
-            exercises: vec![
-                Exercise::ChooseWord {
-                    stage: Some(ExerciseStage::Word),
-                    prompt: "a".into(),
-                    options: vec!["дом".into(), "чай".into()],
-                    answer: "дом".into(),
-                    image: None,
-                },
-                Exercise::ChooseWord {
-                    stage: Some(ExerciseStage::Word),
-                    prompt: "b".into(),
-                    options: vec!["чай".into(), "стол".into()],
-                    answer: "чай".into(),
-                    image: None,
-                },
-            ],
-        };
-        eng.handle(Command::StartSession);
-        let ex0 = eng.current_exercise().cloned().unwrap();
-        match &ex0 {
-            Exercise::ChooseWord { answer, .. } => assert_eq!(answer, "дом"),
-            _ => panic!("ожидали «дом» первым"),
-        }
-        eng.handle(Command::Submit(wrong_answer_for(&ex0)));
-        eng.handle(Command::AdvanceAfterFeedback);
-        let ex1 = eng.current_exercise().cloned().unwrap();
-        eng.handle(Command::Submit(wrong_answer_for(&ex1)));
-        eng.handle(Command::AdvanceAfterFeedback);
-        let ex2 = eng.current_exercise().cloned().unwrap();
-        eng.handle(Command::Submit(wrong_answer_for(&ex2)));
-        eng.handle(Command::AdvanceAfterFeedback);
-        let next = eng.current_exercise().cloned().unwrap();
-        match next {
-            Exercise::ChooseWord { answer, .. } => assert_eq!(answer, "дом"),
-            _ => panic!("ожидали повтор «дом»"),
-        }
-    }
-
-    #[test]
-    fn diagnosis_does_not_requeue() {
-        let mut eng = Engine::new_logic_only();
-        eng.pack = tiny_test_pack();
-        eng.handle(Command::StartDiagnosis);
-        let len = eng.session().unwrap().exercises.len();
-        let ex = eng.current_exercise().cloned().unwrap();
-        eng.handle(Command::Submit(wrong_answer_for(&ex)));
-        eng.handle(Command::AdvanceAfterFeedback);
-        assert_eq!(eng.session().unwrap().exercises.len(), len);
-    }
-
-    #[test]
-    fn submit_updates_speech_map() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = Some(ExerciseStage::Syllable);
-        eng.progress.speech_map = Default::default();
-        eng.handle(Command::StartSession);
-        let ex = eng.current_exercise().cloned().unwrap();
-        let key = ex.map_key().expect("ключ");
-        match ex {
-            Exercise::ChooseWord { answer, .. } => {
-                eng.handle(Command::Submit(UserAnswer::Choice(answer)));
-            }
-            Exercise::BuildPhrase { answer, .. } => {
-                let parts: Vec<_> = answer.split_whitespace().map(str::to_string).collect();
-                eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
-            }
-            Exercise::ReadAloud { .. } => {
-                eng.handle(Command::Submit(UserAnswer::ReadDone {
-                    matched: true,
-                    heard: None,
-                }));
-            }
-        }
-        let stat = eng.progress().speech_map.items.get(&key).unwrap();
-        assert_eq!(stat.attempts, 1);
-        assert_eq!(stat.correct, 1);
-    }
-
-    #[test]
-    fn dictaphone_open_and_leave() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::OpenDictaphone);
-        assert!(matches!(eng.screen(), Screen::Dictaphone));
-        eng.handle(Command::LeaveDictaphone);
-        assert!(matches!(eng.screen(), Screen::Home));
-    }
-
-    #[test]
-    fn go_home_from_dictaphone_clears_buffer() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::OpenDictaphone);
-        eng.dictaphone.transcript = "черновик".into();
-        eng.handle(Command::GoHome);
-        assert!(matches!(eng.screen(), Screen::Home));
-        assert!(eng.dictaphone.transcript.is_empty());
-    }
-
-    #[test]
-    fn settings_screen_from_home() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::OpenSettings);
-        assert!(matches!(eng.screen(), Screen::Settings));
-        eng.handle(Command::LeaveSettings);
-        assert!(matches!(eng.screen(), Screen::Home));
-        assert!(eng.model_download_note().is_none());
-    }
-
-    #[test]
-    fn set_language_switches_default_pack() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::SetPack("daily".into()));
-        assert_eq!(eng.pack_id(), "daily");
-        eng.handle(Command::OpenSettings);
-        eng.handle(Command::SetLanguage(AppLanguage::En));
-        assert_eq!(eng.language(), AppLanguage::En);
-        assert_eq!(eng.pack_id(), "starter_en");
-        assert!(eng.pack().title.contains("Sounds") || eng.pack().title.contains("syllables"));
-        assert!(matches!(eng.screen(), Screen::Settings));
-        let ids: Vec<_> = eng.pack_catalog().into_iter().map(|e| e.id).collect();
-        assert!(ids.contains(&"starter_en".into()));
-        assert!(!ids.contains(&"daily".into()));
-        eng.handle(Command::SetLanguage(AppLanguage::Ru));
-        assert_eq!(eng.language(), AppLanguage::Ru);
-        assert_eq!(eng.pack_id(), "starter");
-    }
-
-    #[test]
-    fn set_language_drops_in_flight_download() {
-        let mut eng = Engine::new_logic_only();
-        let (tx, rx) = std::sync::mpsc::channel();
-        eng.model_download_rx = Some(rx);
-        eng.model_download = ModelDownloadState::Working {
-            label: "old".into(),
-            percent: Some(10),
-        };
-        eng.handle(Command::SetLanguage(AppLanguage::En));
-        assert!(eng.model_download_rx.is_none());
-        assert!(matches!(eng.model_download(), ModelDownloadState::Idle));
-        // Старый отправитель больше не доставляет в движок.
-        let _ = tx.send(DownloadMsg::Percent(99));
-        let mut tick = TickResult::default();
-        eng.poll_model_download(&mut tick);
-        assert!(matches!(eng.model_download(), ModelDownloadState::Idle));
-    }
-
-    #[test]
-    fn simple_mode_starts_sound_without_level() {
-        let mut eng = Engine::new_logic_only();
-        eng.progress.level = None;
-        eng.handle(Command::SetSimpleMode(true));
-        assert!(eng.simple_mode());
-        eng.handle(Command::StartSession);
-        assert_eq!(eng.level(), Some(ExerciseStage::Sound));
-        assert!(matches!(eng.screen(), Screen::Exercise));
-    }
-
-    #[test]
-    #[cfg(not(feature = "asr"))]
-    fn start_model_download_noop_without_asr() {
-        let mut eng = Engine::new_logic_only();
-        eng.handle(Command::StartModelDownload);
-        assert!(matches!(eng.model_download(), ModelDownloadState::Idle));
-    }
-
-    #[test]
-    #[cfg(feature = "asr")]
-    fn start_model_download_begins_when_model_missing() {
-        with_temp_xdg_data_home(|_tmp| {
-            let mut eng = Engine::new_logic_only();
-            assert!(matches!(eng.asr_status(), AsrStatus::ModelMissing));
-            eng.handle(Command::StartModelDownload);
-            assert!(matches!(
-                eng.model_download(),
-                ModelDownloadState::Working { .. }
-            ));
-            eng.cancel_model_download();
-        });
-    }
-
-    #[test]
-    fn poll_download_done_updates_state_after_reload() {
-        let (tx, rx) = mpsc::channel();
-        tx.send(DownloadMsg::Done).unwrap();
-        drop(tx);
-        let mut eng = Engine::new_logic_only();
-        eng.test_download_rx(rx);
-        let tick = eng.tick();
-        assert!(tick.want_repaint);
-        match eng.asr_status() {
-            AsrStatus::Ready => {
-                assert!(matches!(
-                    eng.model_download(),
-                    ModelDownloadState::Succeeded
-                ));
-                assert_eq!(
-                    eng.model_download_note(),
-                    Some("Модель установлена. Голос готов.")
-                );
-            }
-            _ => {
-                assert!(matches!(
-                    eng.model_download(),
-                    ModelDownloadState::Failed(_)
-                ));
-                assert!(eng.model_download_note().is_none());
-            }
-        }
-    }
-
-    #[test]
-    fn poll_download_err_sets_failed() {
-        let (tx, rx) = mpsc::channel();
-        tx.send(DownloadMsg::Err("сеть".into())).unwrap();
-        drop(tx);
-        let mut eng = Engine::new_logic_only();
-        eng.test_download_rx(rx);
-        eng.tick();
-        assert!(matches!(
-            eng.model_download(),
-            ModelDownloadState::Failed(e) if e == "сеть"
-        ));
-    }
-
-    #[test]
-    fn poll_download_percent_updates_progress() {
-        let (tx, rx) = mpsc::channel();
-        tx.send(DownloadMsg::Phase("Скачиваю…".into())).unwrap();
-        tx.send(DownloadMsg::Percent(42)).unwrap();
-        drop(tx);
-        let mut eng = Engine::new_logic_only();
-        eng.test_download_rx(rx);
-        eng.tick();
-        assert!(matches!(
-            eng.model_download(),
-            ModelDownloadState::Working {
-                label,
-                percent: Some(42)
-            } if label == "Скачиваю…"
-        ));
-    }
-
-    #[test]
-    fn tick_repaints_while_download_working() {
-        let mut eng = Engine::new_logic_only();
-        eng.model_download = ModelDownloadState::Working {
-            label: "Скачиваю…".into(),
-            percent: Some(10),
-        };
-        let tick = eng.tick();
-        assert!(tick.want_repaint);
-        assert_eq!(tick.repaint_after, Some(Duration::from_millis(200)));
-    }
-
-    #[test]
-    fn tick_idle_is_quiet() {
-        let mut eng = Engine::new_logic_only();
-        let t = eng.tick();
-        assert!(!t.want_repaint);
-        assert!(t.repaint_after.is_none());
-    }
-
-    fn submit_current_correct(eng: &mut Engine) {
-        let Some(ex) = eng.current_exercise().cloned() else {
-            return;
-        };
-        match ex {
-            Exercise::ChooseWord { answer, .. } => {
-                eng.handle(Command::Submit(UserAnswer::Choice(answer)));
-            }
-            Exercise::BuildPhrase { answer, .. } => {
-                let parts: Vec<_> = answer.split_whitespace().map(str::to_string).collect();
-                eng.handle(Command::Submit(UserAnswer::Phrase(parts)));
-            }
-            Exercise::ReadAloud { .. } => {
-                eng.handle(Command::Submit(UserAnswer::ReadDone {
-                    matched: true,
-                    heard: None,
-                }));
-            }
-        }
-    }
-
-    /// Smoke: экраны UI открываются/закрываются через Command (контракт app.rs).
-    #[test]
-    fn ui_navigation_smoke_open_leave_and_gohome() {
-        let mut eng = Engine::new_logic_only();
-
-        let opens = [
-            (Command::OpenPackPick, "PackPick"),
-            (Command::OpenLevelPick, "LevelPick"),
-            (Command::OpenSpeechMap, "SpeechMap"),
-            (Command::OpenProgress, "ProgressReport"),
-            (Command::OpenWarmup, "Warmup"),
-            (Command::OpenSettings, "Settings"),
-            (Command::OpenDictaphone, "Dictaphone"),
-            (Command::OpenPackEditor, "PackEditor"),
-        ];
-
-        for (open, name) in opens {
-            eng.handle(Command::GoHome);
-            assert!(matches!(eng.screen(), Screen::Home));
-            eng.handle(open.clone());
-            let ok = match name {
-                "PackPick" => matches!(eng.screen(), Screen::PackPick),
-                "LevelPick" => matches!(eng.screen(), Screen::LevelPick),
-                "SpeechMap" => matches!(eng.screen(), Screen::SpeechMap),
-                "ProgressReport" => matches!(eng.screen(), Screen::ProgressReport),
-                "Warmup" => matches!(eng.screen(), Screen::Warmup),
-                "Settings" => matches!(eng.screen(), Screen::Settings),
-                "Dictaphone" => matches!(eng.screen(), Screen::Dictaphone),
-                "PackEditor" => matches!(eng.screen(), Screen::PackEditor),
-                _ => false,
-            };
-            assert!(ok, "после {open:?} экран {name}, получили {:?}", eng.screen());
-            eng.handle(Command::GoHome);
-            assert!(matches!(eng.screen(), Screen::Home), "GoHome с {open:?}");
-        }
-
-        eng.handle(Command::OpenPackPick);
-        eng.handle(Command::LeavePackPick);
-        assert!(matches!(eng.screen(), Screen::Home));
-
-        eng.handle(Command::OpenLevelPick);
-        eng.handle(Command::LeaveLevelPick);
-        assert!(matches!(eng.screen(), Screen::Home));
-
-        eng.handle(Command::SetSimpleMode(true));
-        assert!(eng.simple_mode());
-        eng.handle(Command::SetSimpleMode(false));
-        assert!(!eng.simple_mode());
-    }
-
-    /// Занятие до Result → AgainSession снова открывает Exercise.
-    #[test]
-    fn ui_practice_reaches_result_then_again() {
-        let mut eng = Engine::new_logic_only();
-        eng.pack = tiny_test_pack();
-        eng.progress.level = Some(ExerciseStage::Word);
-        eng.handle(Command::StartSession);
-        assert!(matches!(eng.screen(), Screen::Exercise));
-
-        let mut guard = 0;
-        while !matches!(eng.screen(), Screen::Result { .. }) {
-            guard += 1;
-            assert!(guard < 40, "зациклились без Result");
-            if matches!(eng.screen(), Screen::Exercise) {
-                submit_current_correct(&mut eng);
-            }
-            if matches!(eng.screen(), Screen::Feedback { .. }) {
-                eng.handle(Command::AdvanceAfterFeedback);
-            }
-        }
-
-        match eng.screen() {
-            Screen::Result {
-                correct,
-                total,
-                unique,
-            } => {
-                assert!(*total >= 1);
-                assert_eq!(*correct, *total);
-                assert!(*unique >= 1);
-            }
-            other => panic!("ожидали Result, получили {other:?}"),
-        }
-
-        eng.handle(Command::AgainSession);
-        assert!(matches!(eng.screen(), Screen::Exercise));
-        assert!(eng.session().is_some());
-    }
-}
-
+mod tests;
